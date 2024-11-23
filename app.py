@@ -1,16 +1,65 @@
-from flask import Flask, request, jsonify, make_response
+from flask import Flask, request, jsonify, g, session
 from flask_cors import CORS
 import sqlite3
-import json
 import logging
+import datetime
+import jwt
+from werkzeug.security import generate_password_hash, check_password_hash
+import json
+from functools import wraps
+import os
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s',
 )
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, supports_credentials=True, origins=["http://localhost:8080", "http://127.0.0.1:8080"])
+app.config['SECRET_KEY'] = os.urandom(24)
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'None'  # Or 'Strict' for tighter security
+app.config['SESSION_COOKIE_SECURE'] = True  # Set to FALSE in Production
+LIFETIME_DELAY = 15     # in days
+TIMEOUT_DELAY = 24*3600 # 1 day in seconds
+app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(days=LIFETIME_DELAY)  # Adjust as needed
+
+@app.before_request
+def refresh_session():
+    logging.debug("Entering refresh_session")
+    if 'user_id' in session:  # Ensure there's an active session
+        last_activity = session.get('last_activity')
+        now = datetime.datetime.now(datetime.timezone.utc)
+
+        # If the user has been inactive for too long, log them out
+        if last_activity and (now - last_activity).total_seconds() > TIMEOUT_DELAY:  
+            logging.info(f"Session timeout for user {session['user_id']} due to inactivity.")
+            session.pop('user_id', None)  # Remove authentication
+
+            # Inject session timeout into the response context
+            g.session_timeout = True
+
+        session['last_activity'] = now  # Update activity
+        session.permanent = True  # Mark session as permanent
+        app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(days=LIFETIME_DELAY)  # Extend session duration
+    else:
+        g.session_timeout = False
+        logging.info("No active user session.")
+
+@app.after_request
+def add_session_timeout_flag(response):
+    logging.debug("Entering add_session_timeout_flag")
+
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    response.headers["Access-Control-Expose-Headers"] = "X-Session-Timeout"  # Expose this header
+
+    if hasattr(g, 'session_timeout') and g.session_timeout:
+        logging.info('Send timeout flag to frontend')
+        response.headers['X-Session-Timeout'] = 'true'
+
+    return response
+
 
 # Function to connect to the database
 def get_db_connection():
@@ -21,6 +70,25 @@ def get_db_connection():
 # Create the tables and indexes, used once
 def init_db():
     with get_db_connection() as conn:
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                is_superuser BOOLEAN DEFAULT FALSE,
+                preferences TEXT DEFAULT '\{\}',
+                settings TEXT DEFAULT '\{\}'
+            )
+        ''')
+
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS config (
+                id INTEGER PRIMARY KEY,
+                enable_auth BOOLEAN DEFAULT TRUE,
+                allowed_domains TEXT DEFAULT '["example.com"]'
+            );
+        ''')
+
         conn.execute('''
             CREATE TABLE IF NOT EXISTS categories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,8 +122,153 @@ def init_db():
         conn.execute('CREATE INDEX IF NOT EXISTS idx_memos_type ON memos (type_id)')
     print("Database initialized.")
 
+
+# Middleware to enforce authentication
+def auth_required(f):
+    logging.debug("Entering auth_required")
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Check if authentication is enabled
+        with get_db_connection() as conn:
+            config = conn.execute('SELECT enable_auth FROM config WHERE id = 1').fetchone()
+            if not config or not config['enable_auth']:
+                return f(*args, **kwargs)  # Auth not enforced
+            
+            # Check session for logged-in user
+            user_id = session.get('user_id')
+            if not user_id:
+                return jsonify({"error": "Authentication required"}), 401
+            
+            # Attach user information to the global `g` object for route use
+            user = conn.execute('SELECT id, email, is_superuser FROM users WHERE id = ?', (user_id,)).fetchone()
+            if not user:
+                return jsonify({"error": "Invalid session"}), 401
+            g.user = user
+
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+@app.route('/sign-in', methods=['POST'])
+def sign_in():
+    data = request.get_json()
+    email = data.get('email')
+    password = data.get('password')
+
+    if not email or not password:
+        return jsonify({"error": "Email and password are required"}), 400
+
+    with get_db_connection() as conn:
+        user = conn.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
+        if not user or not check_password_hash(user['password_hash'], password):
+            return jsonify({"error": "Invalid credentials"}), 401
+
+        # Store user in session
+        session['user_id'] = user['id']
+        return jsonify({"message": "Logged in successfully", "user": {"email": user['email'], "is_superuser": bool(user['is_superuser'])}})
+
+@app.route('/sign-up', methods=['POST'])
+def sign_up():
+    data = request.get_json()
+    email = data.get('email')
+    password = data.get('password')
+
+    # Check email domain
+    with get_db_connection() as conn:
+        config = conn.execute('SELECT allowed_domains FROM config WHERE id = 1').fetchone()
+        allowed_domains = json.loads(config['allowed_domains'])
+        domain = email.split('@')[-1]
+
+        if domain not in allowed_domains:
+            return jsonify({"error": f"Domain '@{domain}' not allowed"}), 403
+
+        password_hash = generate_password_hash(password)
+        try:
+            conn.execute(
+                'INSERT INTO users (email, password_hash) VALUES (?, ?)',
+                (email, password_hash)
+            )
+            conn.commit()
+            return jsonify({"message": "Sign-up successful"}), 201
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "User already exists"}), 409
+
+@app.route('/sign-out', methods=['POST'])
+@auth_required
+def sign_out():
+    session.clear()
+    return jsonify({"message": "Signed out successfully"})
+
+@app.route('/forgot-password', methods=['POST'])
+def forgot_password():
+    data = request.get_json()
+    email = data.get('email')
+
+    # In production, send an email with a reset link/token
+    return jsonify({"message": f"Password reset link sent to {email}"}), 200
+
+@app.route('/reset-password', methods=['POST'])
+def reset_password():
+    data = request.get_json()
+    email = data.get('email')
+    new_password = data.get('new_password')
+
+    password_hash = generate_password_hash(new_password)
+    with get_db_connection() as conn:
+        conn.execute('UPDATE users SET password_hash = ? WHERE email = ?', (password_hash, email))
+        conn.commit()
+        return jsonify({"message": "Password reset successful"}), 200
+
+@app.route('/toggle-auth', methods=['POST'])
+@auth_required
+def toggle_auth():
+    with get_db_connection() as conn:
+        current_status = conn.execute('SELECT enable_auth FROM config WHERE id = 1').fetchone()
+        new_status = not current_status['enable_auth']
+        conn.execute('UPDATE config SET enable_auth = ? WHERE id = 1', (new_status,))
+        conn.commit()
+        return jsonify({"message": f"Authentication {'enabled' if new_status else 'disabled'}"})
+    
+@app.route('/me', methods=['GET'])
+@auth_required
+def get_current_user():
+    return jsonify({"user": {"email": g.user['email'], "is_superuser": bool(g.user['is_superuser'])}})
+
+@app.route('/session-check', methods=['GET'])
+def session_check():
+    logging.debug("Entering session_check")
+    # Check if a timeout occurred
+    if session.get('session_timeout'):
+        session.pop('session_timeout', None)  # Clear the flag
+        return jsonify({"error": "Session timeout. Please log in again."}), 401
+        
+    if 'user_id' in session:
+        user = get_user_by_id(session['user_id'])
+        if user:
+            return jsonify({"user": {"email": user["email"], "is_superuser": bool(user["is_superuser"])}})
+        else:
+            # User ID exists but no user found in DB
+            return jsonify({"error": "User not found. Please log in again."}), 401
+    
+    # No user_id in session
+    return jsonify({"error": "No active session"}), 401
+
+
+# Route to list all users
+@app.route('/users', methods=['GET'])
+@auth_required
+def get_users():
+    with get_db_connection() as conn:
+        users = conn.execute('''
+            SELECT * FROM users
+        ''').fetchall()
+
+    return jsonify([dict(user) for user in users])
+
+
 # Route to list all memos
 @app.route('/memos', methods=['GET'])
+@auth_required
 def get_memos():
     with get_db_connection() as conn:
         memos = conn.execute('''
@@ -69,6 +282,7 @@ def get_memos():
 
 # Route to add a new memo
 @app.route('/memos', methods=['POST'])
+@auth_required
 def add_memo():
     new_memo = request.get_json()
     name = new_memo.get('name')
@@ -102,6 +316,7 @@ def add_memo():
 
 # Route to delete a memo
 @app.route('/memos/<int:id>', methods=['DELETE'])
+@auth_required
 def delete_memo(id):
     logging.debug(f"delete memo id=<{id}>")
     with get_db_connection() as conn:
@@ -126,6 +341,7 @@ def delete_memo(id):
 
 # Route to update a memo
 @app.route('/memos/<int:id>', methods=['PUT'])
+@auth_required
 def update_memo(id):
     updated_memo = request.get_json()
     name = updated_memo.get('name')
@@ -178,6 +394,7 @@ def update_memo(id):
 
 # Route to list all categories
 @app.route('/categories', methods=['GET'])
+@auth_required
 def get_categories():
     with get_db_connection() as conn:
         categories = conn.execute('SELECT * FROM categories').fetchall()
@@ -186,6 +403,7 @@ def get_categories():
 
 # Route to add a category
 @app.route('/categories', methods=['POST'])
+@auth_required
 def add_category():
     new_category = request.get_json()
     name = new_category.get('name')
@@ -203,6 +421,7 @@ def add_category():
 
 # Route to list all types
 @app.route('/types', methods=['GET'])
+@auth_required
 def get_types():
     with get_db_connection() as conn:
         types = conn.execute('SELECT * FROM types').fetchall()
@@ -211,6 +430,7 @@ def get_types():
 
 # Route to add a new type
 @app.route('/types', methods=['POST'])
+@auth_required
 def add_type():
     new_type = request.get_json()
     name = new_type.get('name')
@@ -228,6 +448,7 @@ def add_type():
 
 # Route to add multiple memos at once
 @app.route('/memos/bulk', methods=['POST'])
+@auth_required
 def add_memos_bulk():
     memos = request.get_json()
 
@@ -272,6 +493,7 @@ def add_memos_bulk():
 
 # Route to export the entire database
 @app.route('/export', methods=['GET'])
+@auth_required
 def export_database():
     with get_db_connection() as conn:
         try:
@@ -300,6 +522,7 @@ def export_database():
             return jsonify({"error": str(e)}), 500
     
 @app.route('/import', methods=['POST'])
+@auth_required
 def import_database():
     try:
         # Get the JSON data from the request
@@ -393,6 +616,7 @@ def import_database():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/categories/<int:id>', methods=['PUT'])
+@auth_required
 def update_category(id):
     updated_category = request.get_json()
     name = updated_category.get('name')
@@ -412,21 +636,8 @@ def update_category(id):
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
-@app.route('/categories/<int:id>', methods=['DELETE'])
-def delete_category(id):
-    with get_db_connection() as conn:
-        try:
-            # Check if category is in use
-            memo = conn.execute('SELECT * FROM memos WHERE category_id = ?', (id,)).fetchone()
-            if memo:
-                return jsonify({"error": "Cannot delete category, it is used by memos."}), 400
-
-            conn.execute('DELETE FROM categories WHERE id = ?', (id,))
-            return jsonify({"message": "Category deleted successfully."}), 200
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
 @app.route('/types/<int:id>', methods=['PUT'])
+@auth_required
 def update_type(id):
     updated_type = request.get_json()
     name = updated_type.get('name')
@@ -500,6 +711,15 @@ def get_or_create_id_by_name(conn, table_name, name):
         # Insert new entry
         cursor = conn.execute(f'INSERT INTO {table_name} (name) VALUES (?)', (name,))
         return cursor.lastrowid
+
+def get_user_by_id(id):
+    if id is None or id == '':
+        return None
+    
+    with get_db_connection() as conn:
+        user = conn.execute("select id, email, is_superuser from users where id = ?", (id,)).fetchone()
+        return user
+
 
 if __name__ == '__main__':
     init_db()  # Initialize the database
