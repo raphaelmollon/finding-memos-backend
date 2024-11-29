@@ -1,3 +1,5 @@
 db_save.json
 *.db
 *.save
+*.old
+__pycache__/
