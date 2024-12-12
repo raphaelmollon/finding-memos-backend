@@ -6,26 +6,37 @@ import sqlite3
 import json
 import logging
 from app.models.helpers import get_user_by_id
+import logging
 
 auth_bp = Blueprint('auth', __name__)
 
 @auth_bp.route('/sign-in', methods=['POST'])
 def sign_in():
-    data = request.get_json()
-    email = data.get('email')
-    password = data.get('password')
+    logging.debug("Entering...")
+    try:
+        data = request.get_json()
+        email = data.get('email')
+        password = data.get('password')
 
-    if not email or not password:
-        return jsonify({"error": "Email and password are required"}), 400
+        if not email or not password:
+            logging.error(f"No email [{not email}] or no password [{not password}]")
+            return jsonify({"error": "Email and password are required"}), 400
 
-    with get_db_connection() as conn:
-        user = conn.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
-        if not user or not check_password_hash(user['password_hash'], password):
-            return jsonify({"error": "Invalid credentials"}), 401
+        with get_db_connection() as conn:
+            user = conn.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
+            if not user or not check_password_hash(user['password_hash'], password):
+                logging.error(f"No user [{not user}] or password doesn't match: [{user and not check_password_hash(user['password_hash'], password)}]")
+                return jsonify({"error": "Invalid credentials"}), 401
 
-        # Store user in session
-        session['user_id'] = user['id']
-        return jsonify({"message": "Logged in successfully", "user": {"email": user['email'], "is_superuser": bool(user['is_superuser'])}})
+            # Store user in session
+            session['user_id'] = user['id']
+            logging.debug(f"Session created for user [{user['id']}]")
+            return jsonify({"message": "Logged in successfully", "user": {"email": user['email'], "is_superuser": bool(user['is_superuser'])}})
+    except Exception as e:
+        logging.error(f"Uncaught error: {e}")
+        return jsonify({"error":"Uncaught error", "data": data}), 500
+    finally:
+        logging.debug("Leaving...")
 
 @auth_bp.route('/sign-up', methods=['POST'])
 def sign_up():

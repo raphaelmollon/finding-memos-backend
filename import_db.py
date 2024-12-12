@@ -15,4 +15,4 @@ if response.status_code == 201:
 else:
     print(f"Error importing data: {response.status_code}")
     print(response.json())
-exit();
+exit()

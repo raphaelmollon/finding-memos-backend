@@ -1,5 +1,6 @@
 import sqlite3
 from app.config import DATABASE_FILE
+import logging
 
 # Function to connect to the database
 def get_db_connection():
@@ -60,4 +61,5 @@ def init_db():
         conn.execute('CREATE INDEX IF NOT EXISTS idx_memos_name ON memos (name)')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_memos_category ON memos (category_id)')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_memos_type ON memos (type_id)')
-    print("Database initialized.")
+    
+    logging.info("Database initialized.")
