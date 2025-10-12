@@ -1,123 +1,228 @@
-from flask import Blueprint, request, jsonify, session
+from flask import request, session
+from flask_restx import Namespace, Resource, fields
 from werkzeug.security import check_password_hash, generate_password_hash
-from app.models.database import get_db_connection
+
+from app.database import db
+from app.models import User, Config
 from app.middleware import auth_required
-import sqlite3
+
 import json
 import logging
-from app.models.helpers import get_user_by_id
-import logging
 
-auth_bp = Blueprint('auth', __name__)
+auth_ns = Namespace('auth', description="Authentication operations")
 
-@auth_bp.route('/sign-in', methods=['POST'])
-def sign_in():
-    logging.debug("Entering...")
-    try:
+login_model = auth_ns.model('Login', {
+    'email': fields.String(required=True, description='User email'),
+    'password': fields.String(required=True, description='User password')
+})
+
+signup_model = auth_ns.model('SignUp', {
+    'email': fields.String(required=True, description='User email'),
+    'password': fields.String(required=True, description='User password')
+})
+
+user_response_model = auth_ns.model('User', {
+    'email': fields.String(description='User email'),
+    'username': fields.String(description='Username'),
+    'is_superuser': fields.Boolean(description='Is superuser')
+})
+
+message_response_model = auth_ns.model('MessageResponse', {
+    'message': fields.String(description='Response message')
+})
+
+error_response_model = auth_ns.model('ErrorResponse', {
+    'error': fields.String(description='Error message')
+})
+
+
+# Routes RESTX
+@auth_ns.route('/sign-in')
+class SignIn(Resource):
+    @auth_ns.expect(login_model)
+    @auth_ns.response(200, 'Success', user_response_model)
+    @auth_ns.response(400, 'Bad Request', error_response_model)
+    @auth_ns.response(401, 'Invalid credentials', error_response_model)
+    def post(self):
+        """Sign in a user"""
+        logging.debug("Entering sign-in...")
+        try:
+            data = request.get_json()
+            email = data.get('email')
+            password = data.get('password')
+
+            if not email or not password:
+                return {"error": "Email and password are required"}, 400
+
+            user = User.query.filter_by(email=email).first()
+            if not user or not check_password_hash(user.password_hash, password):
+                return {"error": "Invalid credentials"}, 401
+
+            session['user_id'] = user.id
+            logging.debug(f"Session created for user {user.id}")
+            
+            return {
+                "message": "Logged in successfully", 
+                "user": {
+                    "email": user.email, 
+                    "is_superuser": user.is_superuser,
+                    "username": user.username
+                }
+            }, 200
+            
+        except Exception as e:
+            logging.error(f"Sign-in error: {e}")
+            return {"error": "Authentication failed"}, 500
+
+@auth_ns.route('/sign-up')
+class SignUp(Resource):
+    @auth_ns.expect(signup_model)
+    @auth_ns.response(201, 'User created', message_response_model)
+    @auth_ns.response(400, 'Bad Request', error_response_model)
+    @auth_ns.response(403, 'Domain not allowed', error_response_model)
+    @auth_ns.response(409, 'User already exists', error_response_model)
+    def post(self):
+        """Sign up a new user"""
         data = request.get_json()
         email = data.get('email')
         password = data.get('password')
 
         if not email or not password:
-            logging.error(f"No email [{not email}] or no password [{not password}]")
-            return jsonify({"error": "Email and password are required"}), 400
+            return {"error": "Email and password are required"}, 400
 
-        with get_db_connection() as conn:
-            user = conn.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
-            if not user or not check_password_hash(user['password_hash'], password):
-                logging.error(f"No user [{not user}] or password doesn't match: [{user and not check_password_hash(user['password_hash'], password)}]")
-                return jsonify({"error": "Invalid credentials"}), 401
-
-            # Store user in session
-            session['user_id'] = user['id']
-            logging.debug(f"Session created for user [{user['id']}]")
-            return jsonify({"message": "Logged in successfully", "user": {"email": user['email'], "is_superuser": bool(user['is_superuser'])}})
-    except Exception as e:
-        logging.error(f"Uncaught error: {e}")
-        return jsonify({"error":"Uncaught error", "data": data}), 500
-    finally:
-        logging.debug("Leaving...")
-
-@auth_bp.route('/sign-up', methods=['POST'])
-def sign_up():
-    data = request.get_json()
-    email = data.get('email')
-    password = data.get('password')
-
-    # Check email domain
-    with get_db_connection() as conn:
-        config = conn.execute('SELECT allowed_domains FROM config WHERE id = 1').fetchone()
-        allowed_domains = json.loads(config['allowed_domains'])
+        # Check email domain
+        config = Config.query.filter_by(id=1).first()
+        if not config:
+            return {"error": "Configuration not found"}, 500
+            
+        allowed_domains = json.loads(config.allowed_domains)
         domain = email.split('@')[-1]
 
         if domain not in allowed_domains:
-            return jsonify({"error": f"Domain '@{domain}' not allowed"}), 403
+            return {"error": f"Domain '@{domain}' not allowed"}, 403
 
-        password_hash = generate_password_hash(password)
+        # Check if user exists
+        if User.query.filter_by(email=email).first():
+            return {"error": "User already exists"}, 409
+
+        # Create user
         try:
-            conn.execute(
-                'INSERT INTO users (email, password_hash) VALUES (?, ?)',
-                (email, password_hash)
-            )
-            conn.commit()
-            return jsonify({"message": "Sign-up successful"}), 201
-        except sqlite3.IntegrityError:
-            return jsonify({"error": "User already exists"}), 409
+            password_hash = generate_password_hash(password)
+            new_user = User(email=email, password_hash=password_hash)
+            db.session.add(new_user)
+            db.session.commit()
+            return {"message": "Sign-up successful"}, 201
+        except Exception as e:
+            db.session.rollback()
+            logging.error(f"Sign-up error: {e}")
+            return {"error": "Registration failed"}, 500
 
-@auth_bp.route('/sign-out', methods=['POST'])
-@auth_required
-def sign_out():
-    session.clear()
-    return jsonify({"message": "Signed out successfully"})
+@auth_ns.route('/sign-out')
+class SignOut(Resource):
+    @auth_required
+    @auth_ns.response(200, 'Signed out', message_response_model)
+    def post(self):
+        """Sign out the current user"""
+        session.clear()
+        return {"message": "Signed out successfully"}, 200
 
-@auth_bp.route('/forgot-password', methods=['POST'])
-def forgot_password():
-    data = request.get_json()
-    email = data.get('email')
+@auth_ns.route('/forgot-password')
+class ForgotPassword(Resource):
+    @auth_ns.expect(auth_ns.model('ForgotPassword', {
+        'email': fields.String(required=True)
+    }))
+    @auth_ns.response(200, 'Reset link sent', message_response_model)
+    def post(self):
+        """Request password reset"""
+        data = request.get_json()
+        email = data.get('email')
 
-    # In production, send an email with a reset link/token
-    return jsonify({"message": f"Password reset link sent to {email}"}), 200
+        # In production, send an email with a reset link/token
+        return {"message": f"Password reset link sent to {email}"}, 200
 
-@auth_bp.route('/reset-password', methods=['POST'])
-def reset_password():
-    data = request.get_json()
-    email = data.get('email')
-    new_password = data.get('new_password')
+@auth_ns.route('/reset-password')
+class ResetPassword(Resource):
+    @auth_ns.expect(auth_ns.model('ResetPassword', {
+        'email': fields.String(required=True),
+        'new_password': fields.String(required=True)
+    }))
+    @auth_ns.response(200, 'Password reset', message_response_model)
+    @auth_ns.response(404, 'User not found', error_response_model)
+    def post(self):
+        """Reset user password"""
+        data = request.get_json()
+        email = data.get('email')
+        new_password = data.get('new_password')
 
-    password_hash = generate_password_hash(new_password)
-    with get_db_connection() as conn:
-        conn.execute('UPDATE users SET password_hash = ? WHERE email = ?', (password_hash, email))
-        conn.commit()
-        return jsonify({"message": "Password reset successful"}), 200
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            return {"error": "User not found"}, 404
 
-@auth_bp.route('/toggle-auth', methods=['POST'])
-@auth_required
-def toggle_auth():
-    with get_db_connection() as conn:
-        current_status = conn.execute('SELECT enable_auth FROM config WHERE id = 1').fetchone()
-        new_status = not current_status['enable_auth']
-        conn.execute('UPDATE config SET enable_auth = ? WHERE id = 1', (new_status,))
-        conn.commit()
-        return jsonify({"message": f"Authentication {'enabled' if new_status else 'disabled'}"})
-    
-@auth_bp.route('/session-check', methods=['GET'])
-def session_check():
-    logging.debug("Entering session_check")
-    with get_db_connection() as conn:
-        config = conn.execute('SELECT enable_auth FROM config WHERE id = 1').fetchone()
-        if not config or not config['enable_auth']:    # Check if a timeout occurred
-            return jsonify({"user": {"email": "no_auth@required", "is_superuser": True}})
-    if session.get('session_timeout'):
-        session.pop('session_timeout', None)  # Clear the flag
-        return jsonify({"error": "Session timeout. Please log in again."}), 401
+        try:
+            user.password_hash = generate_password_hash(new_password)
+            db.session.commit()
+            return {"message": "Password reset successful"}, 200
+        except Exception as e:
+            db.session.rollback()
+            logging.error(f"Password reset error: {e}")
+            return {"error": "Password reset failed"}, 500
+
+@auth_ns.route('/toggle-auth')
+class ToggleAuth(Resource):
+    @auth_required
+    @auth_ns.response(200, 'Auth toggled', message_response_model)
+    @auth_ns.response(403, 'Forbidden', error_response_model)
+    def post(self):
+        """Toggle authentication (superuser only)"""
+        from flask import g
+        if not g.user.is_superuser:
+            return {"error": "Superuser required"}, 403
+
+        config = Config.query.filter_by(id=1).first()
+        if not config:
+            return {"error": "Configuration not found"}, 404
+
+        try:
+            config.enable_auth = not config.enable_auth
+            db.session.commit()
+            return {
+                "message": f"Authentication {'enabled' if config.enable_auth else 'disabled'}"
+            }, 200
+        except Exception as e:
+            db.session.rollback()
+            logging.error(f"Toggle auth error: {e}")
+            return {"error": "Failed to update authentication setting"}, 500
+
+@auth_ns.route('/session-check')
+class SessionCheck(Resource):
+    @auth_ns.response(200, 'Session valid', user_response_model)
+    @auth_ns.response(401, 'No active session', error_response_model)
+    def get(self):
+        """Check current session status"""
+        logging.debug("Entering session-check")
         
-    if 'user_id' in session:
-        user = get_user_by_id(session['user_id'])
-        if user:
-            return jsonify({"user": {"email": user["email"], "is_superuser": bool(user["is_superuser"])}})
-        else:
-            # User ID exists but no user found in DB
-            return jsonify({"error": "User not found. Please log in again."}), 401
-    
-    # No user_id in session
-    return jsonify({"error": "No active session"}), 401
+        # Vérifier si l'authentification est activée
+        config = Config.query.filter_by(id=1).first()
+        if not config or not config.enable_auth:
+            return {"user": {"email": "no_auth@required", "is_superuser": True}}, 200
+        
+        if session.get('session_timeout'):
+            session.pop('session_timeout', None)
+            return {"error": "Session timeout. Please log in again."}, 401
+            
+        if 'user_id' in session:
+            user = User.query.filter_by(id=session['user_id']).first()
+            if user:
+                return {
+                    "user": {
+                        "email": user.email, 
+                        "is_superuser": user.is_superuser,
+                        "username": user.username
+                    }
+                }, 200
+            else:
+                return {"error": "User not found. Please log in again."}, 401
+        
+        return {"error": "No active session"}, 401
+
+

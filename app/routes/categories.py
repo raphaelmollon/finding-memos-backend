@@ -1,55 +1,102 @@
-from flask import Blueprint, request, jsonify
-from app.models.database import get_db_connection
+from flask import request
+from flask_restx import Namespace, Resource, fields
+from app.database import db
+from app.models import Category
 from app.middleware import auth_required
-import sqlite3
+import logging
 
-categories_bp = Blueprint('categories', __name__)
+categories_ns = Namespace('categories', description='Categories operations')
+
+# Models
+category_model = categories_ns.model('Category', {
+    'id': fields.Integer(description='Category ID'),
+    'name': fields.String(description='Category name')
+})
+
+category_input_model = categories_ns.model('CategoryInput', {
+    'name': fields.String(description='Category name')
+})
 
 # Route to list all categories
-@categories_bp.route('/', methods=['GET'])
-@auth_required
-def get_categories():
-    with get_db_connection() as conn:
-        categories = conn.execute('SELECT * FROM categories').fetchall()
-
-    return jsonify([dict(category) for category in categories])
-
-# Route to add a category
-@categories_bp.route('', methods=['POST'])
-@auth_required
-def add_category():
-    new_category = request.get_json()
-    name = new_category.get('name')
-
-    if not name:
-        return jsonify({"error": "Category name is required."}), 400
-
-    with get_db_connection() as conn:
+@categories_ns.route('/')
+class CategoryList(Resource):
+    @auth_required
+    @categories_ns.response(200, "Success", [category_model])
+    @categories_ns.response(500, "Internal server error")
+    def get(self):
         try:
-            conn.execute('INSERT INTO categories (name) VALUES (?)', (name,))
-            return jsonify({"message": "New category added successfully."}), 201
+            categories = Category.query.all()
+            result = [{"id": category.id, "name": category.name} for category in categories]
 
-        except sqlite3.IntegrityError:
-            return jsonify({"error": "Category already exists"}), 409
-
-@categories_bp.route('/<int:id>', methods=['PUT'])
-@auth_required
-def update_category(id):
-    updated_category = request.get_json()
-    name = updated_category.get('name')
-
-    if not name:
-        return jsonify({"error": "Category name is required."}), 400
-
-    with get_db_connection() as conn:
-        try:
-            # Check if name already exists for another category
-            existing_category = conn.execute('SELECT * FROM categories WHERE name = ? AND id != ?', (name, id)).fetchone()
-            if existing_category:
-                return jsonify({"error": "Category name already exists."}), 409
-
-            conn.execute('UPDATE categories SET name = ? WHERE id = ?', (name, id))
-            return jsonify({"message": "Category updated successfully."}), 200
+            return result, 200
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            logging.error(f"Error fetching categories: {e}")
+            return {"error": "Failed to fetch categories"}, 500
 
+    # Route to add a category
+    @auth_required
+    @categories_ns.expect(category_input_model)
+    @categories_ns.response(201, "Category created")
+    @categories_ns.response(400, "Bad request")
+    @categories_ns.response(409, "Category exists already")
+    @categories_ns.response(500, "Internal server error")
+    def post(self):
+        new_category = request.get_json()
+        name = new_category.get('name')
+
+        if not name:
+            return {"error": "Category name is required."}, 400
+
+        try:
+            existing_category = Category.query.filter_by(name=name).first()
+            if existing_category:
+                return {"error": "Category already exists"}, 409
+            
+            category = Category(name=name)
+            db.session.add(category)
+            db.session.commit()
+
+            return {"message": "New category added successfully."}, 201
+
+        except Exception as e:
+            db.session.rollback()
+            logging.error(f"Error adding category: {e}")
+            return {"error": "Failed to add category"}, 500
+
+@categories_ns.route('/<int:id>')
+class CategoryResource(Resource):
+    @auth_required
+    @categories_ns.expect(category_input_model)
+    @categories_ns.response(200, "Category updated")
+    @categories_ns.response(400, "Bad request")
+    @categories_ns.response(404, "Category not found")
+    @categories_ns.response(409, "Category already exists")
+    @categories_ns.response(500, "Internal server error")
+    def put(self, id):
+        updated_category = request.get_json()
+        name = updated_category.get('name')
+
+        if not name:
+            return {"error": "Category name is required."}, 400
+
+        try:
+            category = Category.query.filter_by(id=id).first()
+            if not category:
+                return {"error": "Category not found"}, 404
+            
+            # Check if name already exists for another category
+            existing_category = Category.query.filter(
+                Category.name == name,
+                Category.id != id
+            ).first()
+
+            if existing_category:
+                return {"error": "Category name already exists."}, 409
+
+            category.name = name
+            db.session.commit()
+            return {"message": "Category updated successfully."}, 200
+        except Exception as e:
+            db.session.rollback()
+            logging.error(f"Error updating category: {e}")
+            return {"error": str(e)}, 500

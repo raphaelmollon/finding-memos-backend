@@ -11,3 +11,5 @@ SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'None'  # Or 'Strict' for tighter security
 SESSION_COOKIE_SECURE = True  # Set to FALSE in Production
 PERMANENT_SESSION_LIFETIME = datetime.timedelta(days=LIFETIME_DELAY)  # Adjust as needed
+
+SQLALCHEMY_DATABASE_URI = "sqlite:///memos.db"

@@ -5,3 +5,6 @@ db_save.json
 __pycache__/
 old/
 log/
+*.bak
+migrations/
+instance/

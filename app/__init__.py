@@ -1,23 +1,42 @@
+import logging
 from flask import Flask
 from flask_cors import CORS
-from app.models.database import init_db
+from flask_migrate import Migrate
+from flask_restx import Api
 from app.middleware import add_session_timeout_flag, refresh_session
 from app.routes import register_routes
+from .database import db
 
 def create_app():
+    
     app = Flask(__name__)
-    CORS(app, supports_credentials=True, origins=["http://localhost:8080", "http://127.0.0.1:8080", "https://finding-memos.rm-info.fr"])
+    CORS(app, supports_credentials=True, origins=["http://localhost:8080", "http://127.0.0.1:8080", "https://finding-memos.savoye.support"])
 
     app.config.from_pyfile('config.py')
+
+    # Initialize the database
+    db.init_app(app)
+    migrate = Migrate(app, db)
+
+    # Initialize Flask-RESTX API
+    api = Api(
+        app,
+        version='1.0',
+        title='Finding Memos API Documentation',
+        description='API for managing memos and other stuff',
+        doc='/docs/'
+    )
 
     # Middleware
     app.before_request(refresh_session)
     app.after_request(add_session_timeout_flag)
 
-    # Initialize the database
-    init_db()
+    # Ensure tables exist
+    with app.app_context():
+        db.create_all()
+        logging.info("Database initialized.")
 
     # Register routes
-    register_routes(app)
+    register_routes(app, api)
 
     return app
