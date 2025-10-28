@@ -26,4 +26,12 @@ from app import create_app
 app = create_app()
 
 if __name__ == "__main__":
-    app.run(debug=True, use_reloader=False)
+    is_production = os.environ.get('FLASK_ENV') == 'production'
+    if is_production:
+        app.run(debug=False)
+    else:
+        app.run(
+            debug=True, 
+            use_reloader=True,
+            host="localhost"
+            )

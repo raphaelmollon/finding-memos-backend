@@ -18,7 +18,7 @@ type_input_model = types_ns.model('TypeInput', {
 })
 
 # Route to list all types
-@types_ns.route('/')
+@types_ns.route('')
 class TypeList(Resource):
     @auth_required
     @types_ns.response(200, "Success", [type_model])

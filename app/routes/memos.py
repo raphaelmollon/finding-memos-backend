@@ -1,4 +1,4 @@
-from flask import request
+from flask import request, g
 from flask_restx import Namespace, Resource, fields
 
 from app.database import db
@@ -29,7 +29,13 @@ memo_model = memos_ns.model('Memo', {
     'category_id': fields.Integer(description='Category ID'),
     'type_id': fields.Integer(description='Type ID'),
     'category_name': fields.String(description='Category name'),
-    'type_name': fields.String(description='Type name')
+    'type_name': fields.String(description='Type name'),
+    'author_id': fields.Integer(description='Author user ID'),
+    'author_email': fields.String(description='Author email'),
+    'author_username': fields.String(description='Author username'),
+    'author_avatar': fields.String(description='Author avatar'),
+    'created_at': fields.String(description='Creation date'),
+    'updated_at': fields.String(description='Last update date')
 })
 
 memo_input_model = memos_ns.model('MemoInput', {
@@ -37,11 +43,12 @@ memo_input_model = memos_ns.model('MemoInput', {
     'description': fields.String(description='Memo description'),
     'content': fields.String(required=True, description='Memo content'),
     'category_name': fields.String(description='Category name'),
-    'type_name': fields.String(description='Type name')
+    'type_name': fields.String(description='Type name'),
+    'author_id': fields.Integer(description='Author id')
 })
 
 # Route to list all memos
-@memos_ns.route('/')
+@memos_ns.route('')
 class MemoList(Resource):
     @auth_required
     @memos_ns.response(200, 'Success', [memo_model])
@@ -50,19 +57,7 @@ class MemoList(Resource):
         try:
             """Get all memos"""
             memos = Memo.query.all()
-
-            result = []
-            for memo in memos:
-                result.append({
-                    'id': memo.id,
-                    'name': memo.name,
-                    'description': memo.description,
-                    'content': memo.content,
-                    'category_id': memo.category_id,
-                    'type_id': memo.type_id, 
-                    'category_name': memo.category.name if memo.category else None,
-                    'type_name': memo.type.name if memo.type else None
-                })
+            result = [memo.to_dict() for memo in memos]
             return result, 200
         except Exception as e:
             logging.error(f"Error fetching memos: {str(e)}")
@@ -99,7 +94,8 @@ class MemoList(Resource):
                 description=description, 
                 content=content, 
                 category=category, 
-                type=type_obj
+                type=type_obj,
+                author_id=g.user.id
             )
             db.session.add(memo)
             db.session.commit()
@@ -117,6 +113,7 @@ class MemoResource(Resource):
     @auth_required
     @memos_ns.expect(int)
     @memos_ns.response(200, "Memo deleted")
+    @memos_ns.response(403, "Forbidden")
     @memos_ns.response(404, "Memo not found")
     @memos_ns.response(500, 'Internal server error')
     def delete(self, id):
@@ -127,6 +124,9 @@ class MemoResource(Resource):
             memo = Memo.query.filter_by(id=id).first()
             if not memo:
                 return {"error": "Memo not found."}, 404
+            
+            if memo.author_id != g.user.id and not g.user.is_superuser:
+                return {"error": "Unauthorized - can only delete your own memos"}, 403
 
             old_category_id = memo.category_id
             old_type_id = memo.type_id
@@ -152,6 +152,7 @@ class MemoResource(Resource):
     @memos_ns.expect(memo_input_model)
     @memos_ns.response(200, "Memo updated")
     @memos_ns.response(400, "Bad Request")
+    @memos_ns.response(403, "Forbidden")
     @memos_ns.response(404, "Memo not found")
     @memos_ns.response(500, 'Internal server error')
     def put(self, id):
@@ -162,9 +163,13 @@ class MemoResource(Resource):
         content = updated_memo.get('content')
         category_name = updated_memo.get('category_name')
         type_name = updated_memo.get('type_name')
+        author_id = updated_memo.get('author_id')
 
         if not name or not content:
             return {"error": "Name and content are required."}, 400
+        
+        if author_id != g.user.id and not g.user.is_superuser:
+            return {"error": "Unauthorized - can only edit your own memos"}, 403
 
         try:
             # Get the existing memo
@@ -246,7 +251,8 @@ class MemosBulk(Resource):
                     description=description,
                     content=content,
                     category=category,
-                    type=type_obj
+                    type=type_obj,
+                    author_id=g.user.id
                 )
                 db.session.add(memo)
             
@@ -256,6 +262,6 @@ class MemosBulk(Resource):
         except Exception as e:
             db.session.rollback()
             logging.error(f"Error adding bulk memos: {e}")
-            return jsonify({"error": str(e)}), 500
+            return {"error": str(e)}, 500
 
 

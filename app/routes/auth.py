@@ -5,6 +5,9 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from app.database import db
 from app.models import User, Config
 from app.middleware import auth_required
+from app.helpers import validate_password
+from app.services.token_service import token_service
+from app.services.email_service import email_service
 
 import json
 import logging
@@ -43,6 +46,8 @@ class SignIn(Resource):
     @auth_ns.response(200, 'Success', user_response_model)
     @auth_ns.response(400, 'Bad Request', error_response_model)
     @auth_ns.response(401, 'Invalid credentials', error_response_model)
+    @auth_ns.response(403, 'User not validated', error_response_model)
+    @auth_ns.response(500, 'Server internal error', error_response_model)
     def post(self):
         """Sign in a user"""
         logging.debug("Entering sign-in...")
@@ -53,10 +58,19 @@ class SignIn(Resource):
 
             if not email or not password:
                 return {"error": "Email and password are required"}, 400
+            logging.debug(f"AFTER credentials check.. email={email} ; pwd={password}")
 
             user = User.query.filter_by(email=email).first()
+            logging.debug(f"Found user:{user.email}")
             if not user or not check_password_hash(user.password_hash, password):
                 return {"error": "Invalid credentials"}, 401
+            logging.debug("AFTER existing user check")
+        
+            if user and user.status == 'NEW':
+                return {"error": "Please validate your email address before logging in"}, 403
+            if user and user.status == 'CLOSED':
+                return {"error": "Your account is closed"}, 403
+            logging.debug("AFTER status check")
 
             session['user_id'] = user.id
             logging.debug(f"Session created for user {user.id}")
@@ -102,16 +116,48 @@ class SignUp(Resource):
             return {"error": f"Domain '@{domain}' not allowed"}, 403
 
         # Check if user exists
-        if User.query.filter_by(email=email).first():
-            return {"error": "User already exists"}, 409
+        existing_user = User.query.filter_by(email=email).first()
+        if existing_user:
+            if existing_user.status == 'NEW':
+                try:
+                    new_token = token_service.generate_signup_token(existing_user.id)
+                    existing_user.email_validation_token = new_token
+
+                    email_sent = email_service.send_email_validation(email, new_token)
+                    if email_sent:
+                        db.session.commit()
+                        return {"message": f"You already registered but didn't validate your email address. A new link has been sent to {email}."}, 200
+                    else:
+                        db.session.rollback()
+                        return {"error": "User already registered, but didn't validate your email address. Failed to renew the validation link"}, 500
+                    
+                except Exception as e:
+                    db.session.rollback()
+                    logging.error(f"Failed to resend the validation link: {e}")
+                    return {"error": "Failed to process validation requests"}, 500
+            else:
+                return {"error": "User already exists"}, 409
+
+        # Check if password is strong enough
+        password_error = validate_password(password)
+        if password_error:
+            return {"error": password_error}, 400
 
         # Create user
         try:
             password_hash = generate_password_hash(password)
             new_user = User(email=email, password_hash=password_hash)
             db.session.add(new_user)
-            db.session.commit()
-            return {"message": "Sign-up successful"}, 201
+            db.session.flush()
+            token = token_service.generate_signup_token(new_user.id)
+            new_user.email_validation_token = token
+            email_sent = email_service.send_email_validation(email, token)
+            if email_sent:
+                db.session.commit()
+                return {"message": "Sign-up successful. Please check your emails and confirm registration."}, 201
+            else:
+                db.session.rollback()
+                return {"error": "Registration failed. Please try again in a moment."}, 500
         except Exception as e:
             db.session.rollback()
             logging.error(f"Sign-up error: {e}")
@@ -129,37 +175,88 @@ class SignOut(Resource):
 @auth_ns.route('/forgot-password')
 class ForgotPassword(Resource):
     @auth_ns.expect(auth_ns.model('ForgotPassword', {
-        'email': fields.String(required=True)
+        'email': fields.String(required=True, description="User email")
     }))
     @auth_ns.response(200, 'Reset link sent', message_response_model)
+    @auth_ns.response(400, "Bad request", error_response_model)
+    @auth_ns.response(500, "Internal server error", error_response_model)
     def post(self):
         """Request password reset"""
         data = request.get_json()
         email = data.get('email')
 
-        # In production, send an email with a reset link/token
-        return {"message": f"Password reset link sent to {email}"}, 200
+        if not email:
+            return {"error": "Email is required"}, 400
+
+        try:
+            user = User.query.filter_by(email=email).first()
+            if user:
+                # Generate a new token
+                # from app.services.token_service import token_service
+                reset_token = token_service.generate_reset_token(user.id)
+
+                # Store the hashed token
+                user.reset_token = reset_token
+                db.session.commit()
+
+                # send the email
+                # from app.services.email_service import email_service
+                email_sent = email_service.send_password_reset(email, reset_token)
+
+                if email_sent:
+                    return {"message": "Reset instructions sent"}, 200
+                else:
+                    return {"error": "Failed to send reset_email"}, 500
+            else:
+                return {"message": "If this email exists, reset instructions have been sent"}, 200
+            
+        except Exception as e:
+            db.session.rollback()
+            logging.error(f"Error in forgot-password: {e}")
+            return {"error": "Failed to process reset request"}, 500
 
 @auth_ns.route('/reset-password')
 class ResetPassword(Resource):
     @auth_ns.expect(auth_ns.model('ResetPassword', {
-        'email': fields.String(required=True),
-        'new_password': fields.String(required=True)
+        'token': fields.String(required=True, description="Reset token from email"),
+        'new_password': fields.String(required=True, description="New password", min_length=8)
     }))
     @auth_ns.response(200, 'Password reset', message_response_model)
+    @auth_ns.response(400, 'Invalid or expired token', error_response_model)
     @auth_ns.response(404, 'User not found', error_response_model)
+    @auth_ns.response(500, 'Internal server error', error_response_model)
     def post(self):
-        """Reset user password"""
+        """Reset password with secure token"""
         data = request.get_json()
-        email = data.get('email')
+        token = data.get('token')
         new_password = data.get('new_password')
 
-        user = User.query.filter_by(email=email).first()
-        if not user:
-            return {"error": "User not found"}, 404
+        # Validate new password
+        password_error = validate_password(new_password)
+        if password_error:
+            return {"error": password_error}, 400
 
+        if not token or not new_password:
+            return {"error": "Token and new password are required"}, 400
+        
         try:
+            # from app.services.token_service import token_service
+            user_id = token_service.validate_reset_token(token)
+
+            if not user_id:
+                return {"error": "Invalid or expired reset token"}, 400
+            
+            user = User.query.filter_by(id=user_id).first()
+            if not user or not user.reset_token:
+                return {"error": "Invalid or expired reset token"}, 400
+            
+            # Check that tokens match (db and provided)
+            if user.reset_token != token:
+                return {"error": "Invalid reset token"}, 400
+            
+            # Update password
             user.password_hash = generate_password_hash(new_password)
+            user.reset_token = None
             db.session.commit()
             return {"message": "Password reset successful"}, 200
         except Exception as e:
@@ -225,4 +322,80 @@ class SessionCheck(Resource):
         
         return {"error": "No active session"}, 401
 
+@auth_ns.route('/validate-email')
+class ValidateEmail(Resource):
+    @auth_ns.expect(auth_ns.model('ValidateEmail', {
+        'token': fields.String(required=True, description="Email validation token")
+    }))
+    @auth_ns.response(200, 'Email validated', message_response_model)
+    @auth_ns.response(400, 'Invalid or expired token', error_response_model)
+    @auth_ns.response(404, 'User not found', error_response_model)
+    @auth_ns.response(500, 'Internal server error', error_response_model)
+    def post(self):
+        """Validate email with secure token"""
+        data = request.get_json()
+        token = data.get('token')
+
+        if not token:
+            return {"error": "Token is required"}, 400
+        
+        try:
+            user_id = token_service.validate_signup_token(token)
+
+            if not user_id:
+                return {"error": "Invalid or expired validation token"}, 400
+            
+            user = User.query.filter_by(id=user_id).first()
+            if not user or not user.email_validation_token or user.status != "NEW":
+                return {"error": "Invalid or expired validation token"}, 400
+            
+            # Check that tokens match (db and provided)
+            if user.email_validation_token != token:
+                return {"error": "Invalid validation token"}, 400
+            
+            # Update status
+            user.status = "VALID"
+            user.email_validation_token = None
+            db.session.commit()
+            return {"message": "Email validation successful"}, 200
+        
+        except Exception as e:
+            db.session.rollback()
+            logging.error(f"Email validation error: {e}")
+            return {"error": "Email validation failed"}, 500
+
+@auth_ns.route('/resend-validation')
+class ResendValidation(Resource):
+    @auth_ns.expect(auth_ns.model('EmailValidation', {
+        'email': fields.String(required=True, description='User email')
+    }))
+    @auth_ns.response(200, 'Email resent', message_response_model)
+    @auth_ns.response(400, 'Invalid request', error_response_model)
+    @auth_ns.response(404, 'User not found', error_response_model)
+    @auth_ns.response(500, 'Internal server error', error_response_model)
+    def post(self):
+        """Resend the validation email with a new token"""
+        try:
+            data = request.get_json()
+            email = data.get('email')
+
+            user = User.query.filter_by(email=email, status='NEW').first()
+            if not user:
+                return {"error": "No pending validation found for this email"}, 400
+            
+            new_token = token_service.generate_signup_token(user.id)
+            user.email_validation_token = new_token
+
+            email_sent = email_service.send_email_validation(email, new_token)
+            if email_sent:
+                db.session.commit()
+                return {"message": "New validation email sent"}, 200
+            else:
+                db.session.rollback()
+                return {"error": "Failed to send a new validation email"}, 500
+            
+        except Exception as e:
+            db.session.rollback()
+            logging.error(f"Failed to send a validation email: {e}")
+            return {"error": "Failed to resend the validation email"}, 500
 

@@ -18,7 +18,7 @@ category_input_model = categories_ns.model('CategoryInput', {
 })
 
 # Route to list all categories
-@categories_ns.route('/')
+@categories_ns.route('')
 class CategoryList(Resource):
     @auth_required
     @categories_ns.response(200, "Success", [category_model])

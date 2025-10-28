@@ -85,7 +85,7 @@ def initialize_superuser(conn):
     print(f"Superuser {email} created successfully.")
 
 def main():
-    print("Welcome to the Finding Memo Initialization Script!")
+    print("Welcome to the Finding Memos Initialization Script!")
     with get_db_connection() as conn:
         # Verify required tables exist
         if not table_exists(conn, 'users') or not table_exists(conn, 'config'):

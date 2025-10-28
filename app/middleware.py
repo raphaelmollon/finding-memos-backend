@@ -71,4 +71,3 @@ def add_session_timeout_flag(response):
         response.headers['X-Session-Timeout'] = 'true'
 
     return response
-
