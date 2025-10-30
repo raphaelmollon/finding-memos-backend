@@ -70,6 +70,8 @@ class SignIn(Resource):
                 return {"error": "Please validate your email address before logging in"}, 403
             if user and user.status == 'CLOSED':
                 return {"error": "Your account is closed"}, 403
+            if user and user.status != 'VALID':
+                return {"error": "Very bad error..."}, 403
             logging.debug("AFTER status check")
 
             session['user_id'] = user.id
@@ -146,7 +148,7 @@ class SignUp(Resource):
         # Create user
         try:
             password_hash = generate_password_hash(password)
-            new_user = User(email=email, password_hash=password_hash)
+            new_user = User(email=email, password_hash=password_hash, status="NEW")
             db.session.add(new_user)
             db.session.flush()
             token = token_service.generate_signup_token(new_user.id)
@@ -325,16 +327,18 @@ class SessionCheck(Resource):
 @auth_ns.route('/validate-email')
 class ValidateEmail(Resource):
     @auth_ns.expect(auth_ns.model('ValidateEmail', {
-        'token': fields.String(required=True, description="Email validation token")
+        'token': fields.String(required=True, description="Email validation token"),
+        'password': fields.String(required=True, description="Password confirmation")
     }))
     @auth_ns.response(200, 'Email validated', message_response_model)
     @auth_ns.response(400, 'Invalid or expired token', error_response_model)
     @auth_ns.response(404, 'User not found', error_response_model)
     @auth_ns.response(500, 'Internal server error', error_response_model)
     def post(self):
-        """Validate email with secure token"""
+        """Validate email with secure token and password confirmation"""
         data = request.get_json()
         token = data.get('token')
+        password = data.get('password')
 
         if not token:
             return {"error": "Token is required"}, 400
@@ -345,13 +349,17 @@ class ValidateEmail(Resource):
             if not user_id:
                 return {"error": "Invalid or expired validation token"}, 400
             
-            user = User.query.filter_by(id=user_id).first()
-            if not user or not user.email_validation_token or user.status != "NEW":
+            user = User.query.filter_by(id=user_id, status="NEW").first()
+            if not user or not user.email_validation_token:
                 return {"error": "Invalid or expired validation token"}, 400
             
             # Check that tokens match (db and provided)
             if user.email_validation_token != token:
                 return {"error": "Invalid validation token"}, 400
+            
+            from werkzeug.security import check_password_hash
+            if not check_password_hash(user.password_hash, password):
+                return {"error": "Invalid password"}, 400
             
             # Update status
             user.status = "VALID"

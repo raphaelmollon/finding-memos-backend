@@ -148,8 +148,8 @@ class MemoResource(Resource):
             return {"error": str(e)}, 500
 
     # Route to update a memo
-    @auth_required
     @memos_ns.expect(memo_input_model)
+    @auth_required
     @memos_ns.response(200, "Memo updated")
     @memos_ns.response(400, "Bad Request")
     @memos_ns.response(403, "Forbidden")

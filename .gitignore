@@ -10,3 +10,4 @@ migrations/
 instance/
 static/
 config_email.py
+*.zip

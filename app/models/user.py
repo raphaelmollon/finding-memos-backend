@@ -14,7 +14,7 @@ class User(db.Model):
     settings = db.Column(db.Text, default='{}')
     reset_token = db.Column(db.String(100), nullable=True)
 
-    status = db.Column(db.String(20), default='NEW')  # NEW, VALID, CLOSED
+    status = db.Column(db.String(20), nullable=False, default_server='NEW')  # NEW, VALID, CLOSED
     email_validation_token = db.Column(db.String(100), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.datetime.now(datetime.timezone.utc))
     updated_at = db.Column(db.DateTime, default=datetime.datetime.now(datetime.timezone.utc), onupdate=datetime.datetime.now(datetime.timezone.utc))

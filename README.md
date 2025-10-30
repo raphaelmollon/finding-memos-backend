@@ -30,3 +30,10 @@ If the database doesn't exist yet, it will be automatically created
 flask db migrate -m "Description of changes"
 flask db upgrade
 ```
+
+### Update requirements after new deploy
+```bash
+pipreqs
+```
+Then in the python app setup on the hosting server: 
+Run PIP install requirements.txt (after deploying the package including this file)

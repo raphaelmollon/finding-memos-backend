@@ -14,7 +14,8 @@ memo_input_model = globals_ns.model('MemoInput', {
     'description': fields.String(description='Memo description'),
     'content': fields.String(required=True, description='Memo content'),
     'category_name': fields.String(description='Category name'),
-    'type_name': fields.String(description='Type name')
+    'type_name': fields.String(description='Type name'),
+    'author_id': fields.Integer(description='Author id')
 })
 
 category_input_model = globals_ns.model('Category', {

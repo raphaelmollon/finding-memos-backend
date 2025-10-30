@@ -126,6 +126,7 @@ class EmailService:
                             <p style="text-align: center;">
                                 <a href="{validation_link}" class="button">Validate Email</a>
                             </p>
+                            <p><strong>You will need to enter your password to complete the validation.</strong></p>
                             <p>This link will expire in one hour.</p>
                             <p>If you didn't create an account, please ignore this email.</p>
                         </div>
@@ -146,6 +147,8 @@ class EmailService:
 
             {validation_link}
 
+            You will need to enter your password to complete the validation.
+            
             This link will expire in one hour.
 
             If you didn't create an account, please ignore this email.
@@ -168,6 +171,7 @@ class EmailService:
         
         except Exception as e:
             logging.error(f"Failed to send email validation to {user_email}: {e}")
+            logging.error(f"Reminder config: {[str(cfg)+':'+str(current_app.config[cfg]) for cfg in current_app.config if 'MAIL' in cfg]}")
             return False
     
 
