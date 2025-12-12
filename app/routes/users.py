@@ -1,3 +1,4 @@
+import json
 from flask import g, request
 from flask_restx import Namespace, Resource, fields
 from app.database import db
@@ -148,6 +149,85 @@ class CurrentUser(Resource):
             logging.error(f"Error updating profile: {e}")
             return {"error": "Failed to update profile"}, 500
 
+@users_ns.route('/me/preferences')
+class CurrentUserPreferences(Resource):
+    @auth_required
+    @users_ns.response(200, "Preferences retrieved")
+    @users_ns.response(500, "Internal server error")
+    def get(self):
+        """Get current user preferences"""
+        try:
+            user = g.user
+            return {
+                "preferences": user.get_preferences()
+            }, 200
+        except Exception as e:
+            logging.error(f"Error fetching current user preferences: {e}")
+            return {"error": "Failed to fetch user preferences"}, 500
+    
+    @auth_required
+    @users_ns.expect(users_ns.model('PreferencesUpdate', {
+        'preferences': fields.Raw(description='Updated preferences')
+    }))
+    def put(self):
+        """Update all user preferences (replace entire preferences object)"""
+        try:
+            data = request.get_json()
+            user = g.user
+            user.preferences = json.dumps(data.get('preferences', {}))
+            db.session.commit()
+            return {"message": "Preferences updated successfully"}, 200
+        except Exception as e:
+            db.session.rollback()
+            logging.error(f"Error updating preferences: {e}")
+            return {"error": "Failed to update preferences"}, 500
+
+# For section-specific operations
+@users_ns.route('/me/preferences/<string:section>')
+class CurrentUserPreferenceSection(Resource):
+    @auth_required
+    def get(self, section):
+        """Get preferences for a specific section"""
+        try:
+            user = g.user
+            section_prefs = user.get_preferences(section)
+            return {
+                "section": section,
+                "preferences": section_prefs
+            }, 200
+        except Exception as e:
+            logging.error(f"Error fetching {section} preferences: {e}")
+            return {"error": f"Failed to fetch {section} preferences"}, 500
+
+    @auth_required
+    @users_ns.expect(users_ns.model('SectionPreferencesUpdate', {
+        'preferences': fields.Raw(description='Updated section preferences')
+    }))
+    def put(self, section):
+        """Update preferences for a specific section"""
+        try:
+            data = request.get_json()
+            user = g.user
+
+            logging.debug(f"section:{section} ; data:{str(data)}")
+            
+            # Get current preferences
+            all_prefs = user.get_preferences()
+            logging.debug(f"all_prefs_BEFORE:{str(all_prefs)}")
+            # Update only the specified section
+            all_prefs[section] = data.get('preferences', {})
+            logging.debug(f"all_prefs_AFTER:{str(all_prefs)}")
+            
+            user.preferences = json.dumps(all_prefs)
+            logging.debug(f"user.preferences:{str(user.preferences)}")
+            db.session.commit()
+            
+            return {"message": f"{section} preferences updated successfully"}, 200
+        except Exception as e:
+            db.session.rollback()
+            logging.error(f"Error updating {section} preferences: {e}")
+            return {"error": f"Failed to update {section} preferences"}, 500
+        
 
 # Route to list all users
 @users_ns.route('')

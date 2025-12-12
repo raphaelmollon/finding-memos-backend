@@ -104,7 +104,7 @@ class MemoList(Resource):
 
         except Exception as e:
             db.session.rollback()
-            logging.error(f"Error adding memo: {e}")
+            logging.error(f"Error adding memo: {str(e)}")
             return {"error": str(e)}, 500
 
 # Route to delete a memo
@@ -144,7 +144,7 @@ class MemoResource(Resource):
         
         except Exception as e:
             db.session.rollback()
-            logging.error(f"Error deleting memo: {e}")
+            logging.error(f"Error deleting memo: {str(e)}")
             return {"error": str(e)}, 500
 
     # Route to update a memo
@@ -173,7 +173,7 @@ class MemoResource(Resource):
 
         try:
             # Get the existing memo
-            memo = Memo.query.filter_by(id=id).first()
+            memo = Memo.query.filter_by(id=id, author_id=author_id).first()
             if not memo:
                 return {"error": "Memo not found."}, 404
 
@@ -211,7 +211,7 @@ class MemoResource(Resource):
 
         except Exception as e:
             db.session.rollback()
-            logging.error(f"Error updating memo: {e}")
+            logging.error(f"Error updating memo: {str(e)}")
             return {"error": str(e)}, 500
 
 # Route to add multiple memos at once
@@ -261,7 +261,24 @@ class MemosBulk(Resource):
 
         except Exception as e:
             db.session.rollback()
-            logging.error(f"Error adding bulk memos: {e}")
+            logging.error(f"Error adding bulk memos: {str(e)}")
             return {"error": str(e)}, 500
 
+# Route to get the number of registered memos
+@memos_ns.route('/stats')
+class MemosStats(Resource):
+    @auth_required
+    @memos_ns.response(200, 'Success')
+    @memos_ns.response(500, 'Internal server error')
+    def get(self):
+        try:
+            """Count the memos"""
+            count = Memo.query.count()
+            authors = db.session.query(Memo.author_id).distinct().count()
+            categories = db.session.query(Memo.category_id).distinct().count()
+            types = db.session.query(Memo.type_id).distinct().count()
+            return {"count": count, "authors": authors, "categories": categories, "types": types}, 200
+        except Exception as e:
+            logging.error(f"Error generating memo stats: {str(e)}")
+            return {"error": "Failed to generate memo stats. Please try again later."}, 500
 

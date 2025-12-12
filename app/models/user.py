@@ -1,3 +1,4 @@
+import json
 from flask_sqlalchemy import SQLAlchemy
 from ..database import db
 import datetime
@@ -16,11 +17,11 @@ class User(db.Model):
 
     status = db.Column(db.String(20), nullable=False, default_server='NEW')  # NEW, VALID, CLOSED
     email_validation_token = db.Column(db.String(100), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.datetime.now(datetime.timezone.utc))
-    updated_at = db.Column(db.DateTime, default=datetime.datetime.now(datetime.timezone.utc), onupdate=datetime.datetime.now(datetime.timezone.utc))
+    created_at = db.Column(db.DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc), onupdate=lambda: datetime.datetime.now(datetime.timezone.utc))
 
-    def to_dict(self):
-        return {
+    def to_dict(self, include_preferences=False):
+        data = {
             "id": self.id,
             "status": self.status,
             "created_at": self.created_at.isoformat() + 'Z' if self.created_at else None,
@@ -29,6 +30,27 @@ class User(db.Model):
             "is_superuser": self.is_superuser,
             "username": self.username,
             "avatar": self.avatar,
-            "preferences": self.preferences,
             "settings": self.settings
         }
+
+        if include_preferences:
+            data["preferences"] = self.preferences
+        
+        return data
+
+    def get_preference(self, section, key, default=None):
+        """Helper method to get a preference"""
+        prefs = json.loads(self.preferences or '{}')
+        return prefs.get(section, {}).get(key, default)
+    
+    def get_preferences(self, section=None, default=None):
+        """Helper method to get all preferences for one section or all of them"""
+        try:
+            prefs = json.loads(self.preferences) if self.preferences else {}
+        except json.JSONDecodeError:
+            prefs = {}
+
+        if section:
+            return prefs.get(section, default)
+        else:
+            return prefs
