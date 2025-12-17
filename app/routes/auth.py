@@ -123,7 +123,7 @@ class SignUp(Resource):
             if existing_user.status == 'NEW':
                 try:
                     new_token = token_service.generate_signup_token(existing_user.id)
-                    existing_user.email_validation_token = new_token
+                    existing_user.email_validation_token = token_service.hash_token(new_token)
 
                     email_sent = email_service.send_email_validation(email, new_token)
                     if email_sent:
@@ -152,7 +152,7 @@ class SignUp(Resource):
             db.session.add(new_user)
             db.session.flush()
             token = token_service.generate_signup_token(new_user.id)
-            new_user.email_validation_token = token
+            new_user.email_validation_token = token_service.hash_token(token)
             email_sent = email_service.send_email_validation(email, token)
             if email_sent:
                 db.session.commit()
@@ -197,8 +197,8 @@ class ForgotPassword(Resource):
                 # from app.services.token_service import token_service
                 reset_token = token_service.generate_reset_token(user.id)
 
-                # Store the hashed token
-                user.reset_token = reset_token
+                # Store the hashed token (security: only hash is stored in DB)
+                user.reset_token = token_service.hash_token(reset_token)
                 db.session.commit()
 
                 # send the email
@@ -247,13 +247,13 @@ class ResetPassword(Resource):
 
             if not user_id:
                 return {"error": "Invalid or expired reset token"}, 400
-            
+
             user = User.query.filter_by(id=user_id).first()
             if not user or not user.reset_token:
                 return {"error": "Invalid or expired reset token"}, 400
-            
-            # Check that tokens match (db and provided)
-            if user.reset_token != token:
+
+            # Check that token hashes match (security: compare hashed values)
+            if user.reset_token != token_service.hash_token(token):
                 return {"error": "Invalid reset token"}, 400
             
             # Update password
@@ -348,13 +348,13 @@ class ValidateEmail(Resource):
 
             if not user_id:
                 return {"error": "Invalid or expired validation token"}, 400
-            
+
             user = User.query.filter_by(id=user_id, status="NEW").first()
             if not user or not user.email_validation_token:
                 return {"error": "Invalid or expired validation token"}, 400
-            
-            # Check that tokens match (db and provided)
-            if user.email_validation_token != token:
+
+            # Check that token hashes match (security: compare hashed values)
+            if user.email_validation_token != token_service.hash_token(token):
                 return {"error": "Invalid validation token"}, 400
             
             from werkzeug.security import check_password_hash
@@ -390,9 +390,9 @@ class ResendValidation(Resource):
             user = User.query.filter_by(email=email, status='NEW').first()
             if not user:
                 return {"error": "No pending validation found for this email"}, 400
-            
+
             new_token = token_service.generate_signup_token(user.id)
-            user.email_validation_token = new_token
+            user.email_validation_token = token_service.hash_token(new_token)
 
             email_sent = email_service.send_email_validation(email, new_token)
             if email_sent:

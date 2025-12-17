@@ -1,4 +1,5 @@
 import logging
+import hashlib
 from itsdangerous import URLSafeTimedSerializer
 from flask import current_app
 
@@ -46,6 +47,10 @@ class TokenService:
         except Exception as e:
             logging.error(f"Token validation failed: {e}")
             return None
-        
+
+    def hash_token(self, token):
+        """Hash a token using SHA256 for secure storage in database"""
+        return hashlib.sha256(token.encode('utf-8')).hexdigest()
+
 # Global instance
 token_service = TokenService()
