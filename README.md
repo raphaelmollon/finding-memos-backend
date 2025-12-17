@@ -33,6 +33,26 @@ pip install -r requirements.txt
 python run.py
 ```
 
+## Testing
+
+### Rate Limiter Test
+To verify rate limiting is working:
+
+```bash
+# With server running
+python tests/test_rate_limit.py
+
+# Or test directly without running server
+python tests/test_rate_limit_direct.py
+```
+
+The rate limiter protects against brute force attacks:
+- `/auth/sign-in`: 5 requests per minute
+- `/auth/sign-up`: 3 requests per hour
+- `/auth/forgot-password`: 3 requests per hour
+- `/auth/reset-password`: 10 requests per hour
+- `/auth/resend-validation`: 3 requests per hour
+
 ## Setup with a Web Server Gateway Interface (Production)
 > - Application startup file: **wsgi.py**
 > - Application Entry point: **application**

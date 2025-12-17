@@ -6,6 +6,7 @@ from flask_restx import Api
 from app.middleware import add_session_timeout_flag, refresh_session
 from app.routes import register_routes
 from .database import db
+from .limiter import limiter
 import os
 
 def create_app():
@@ -35,6 +36,9 @@ def create_app():
     # Initialize the database
     db.init_app(app)
     migrate = Migrate(app, db)
+
+    # Initialize rate limiter
+    limiter.init_app(app)
 
     # Initialize Flask-RESTX API
     api = Api(

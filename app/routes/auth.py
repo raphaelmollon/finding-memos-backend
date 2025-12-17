@@ -8,6 +8,7 @@ from app.middleware import auth_required
 from app.helpers import validate_password
 from app.services.token_service import token_service
 from app.services.email_service import email_service
+from app.limiter import limiter
 
 import json
 import logging
@@ -42,12 +43,16 @@ error_response_model = auth_ns.model('ErrorResponse', {
 # Routes RESTX
 @auth_ns.route('/sign-in')
 class SignIn(Resource):
+    decorators = [limiter.limit("5 per minute")]
+
     @auth_ns.expect(login_model)
     @auth_ns.response(200, 'Success', user_response_model)
     @auth_ns.response(400, 'Bad Request', error_response_model)
     @auth_ns.response(401, 'Invalid credentials', error_response_model)
     @auth_ns.response(403, 'User not validated', error_response_model)
+    @auth_ns.response(429, 'Too many requests', error_response_model)
     @auth_ns.response(500, 'Server internal error', error_response_model)
+    @auth_ns.doc(description="Rate limit: 5 per minute")
     def post(self):
         """Sign in a user"""
         logging.debug("Entering sign-in...")
@@ -92,11 +97,15 @@ class SignIn(Resource):
 
 @auth_ns.route('/sign-up')
 class SignUp(Resource):
+    decorators = [limiter.limit("3 per hour")]
+
     @auth_ns.expect(signup_model)
     @auth_ns.response(201, 'User created', message_response_model)
     @auth_ns.response(400, 'Bad Request', error_response_model)
     @auth_ns.response(403, 'Domain not allowed', error_response_model)
     @auth_ns.response(409, 'User already exists', error_response_model)
+    @auth_ns.response(429, 'Too many requests', error_response_model)
+    @auth_ns.doc(description="Rate limit: 3 per hour")
     def post(self):
         """Sign up a new user"""
         data = request.get_json()
@@ -176,12 +185,16 @@ class SignOut(Resource):
 
 @auth_ns.route('/forgot-password')
 class ForgotPassword(Resource):
+    decorators = [limiter.limit("3 per hour")]
+
     @auth_ns.expect(auth_ns.model('ForgotPassword', {
         'email': fields.String(required=True, description="User email")
     }))
     @auth_ns.response(200, 'Reset link sent', message_response_model)
     @auth_ns.response(400, "Bad request", error_response_model)
+    @auth_ns.response(429, 'Too many requests', error_response_model)
     @auth_ns.response(500, "Internal server error", error_response_model)
+    @auth_ns.doc(description="Rate limit: 3 per hour")
     def post(self):
         """Request password reset"""
         data = request.get_json()
@@ -219,6 +232,8 @@ class ForgotPassword(Resource):
 
 @auth_ns.route('/reset-password')
 class ResetPassword(Resource):
+    decorators = [limiter.limit("10 per hour")]
+
     @auth_ns.expect(auth_ns.model('ResetPassword', {
         'token': fields.String(required=True, description="Reset token from email"),
         'new_password': fields.String(required=True, description="New password", min_length=8)
@@ -226,7 +241,9 @@ class ResetPassword(Resource):
     @auth_ns.response(200, 'Password reset', message_response_model)
     @auth_ns.response(400, 'Invalid or expired token', error_response_model)
     @auth_ns.response(404, 'User not found', error_response_model)
+    @auth_ns.response(429, 'Too many requests', error_response_model)
     @auth_ns.response(500, 'Internal server error', error_response_model)
+    @auth_ns.doc(description="Rate limit: 10 per hour")
     def post(self):
         """Reset password with secure token"""
         data = request.get_json()
@@ -374,13 +391,17 @@ class ValidateEmail(Resource):
 
 @auth_ns.route('/resend-validation')
 class ResendValidation(Resource):
+    decorators = [limiter.limit("3 per hour")]
+
     @auth_ns.expect(auth_ns.model('EmailValidation', {
         'email': fields.String(required=True, description='User email')
     }))
     @auth_ns.response(200, 'Email resent', message_response_model)
     @auth_ns.response(400, 'Invalid request', error_response_model)
     @auth_ns.response(404, 'User not found', error_response_model)
+    @auth_ns.response(429, 'Too many requests', error_response_model)
     @auth_ns.response(500, 'Internal server error', error_response_model)
+    @auth_ns.doc(description="Rate limit: 3 per hour")
     def post(self):
         """Resend the validation email with a new token"""
         try:
