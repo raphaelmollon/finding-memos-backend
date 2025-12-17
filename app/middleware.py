@@ -20,14 +20,16 @@ def refresh_session():
         # If the user has been inactive for too long, log them out
         if last_activity and (now - last_activity).total_seconds() > app.config['TIMEOUT_DELAY']:
             logging.info(f"Session timeout for user {session['user_id']} due to inactivity.")
-            session.pop('user_id', None)  # Remove authentication
+            session.clear()  # Clear entire session to avoid partial state
 
             # Inject session timeout into the response context
             g.session_timeout = True
+            return  # Exit early - don't update last_activity for timed-out sessions
 
-        session['last_activity'] = now  # Update activity
-        session.permanent = True  # Mark session as permanent
-        app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(days=app.config['LIFETIME_DELAY'])  # Extend session duration
+        # Only update activity for valid, active sessions
+        session['last_activity'] = now
+        session.permanent = True
+        app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(days=app.config['LIFETIME_DELAY'])
     else:
         g.session_timeout = False
         logging.info("No active user session.")
