@@ -1,11 +1,39 @@
 # Finding-Memo - Backend
 
-### Compiles and hot-reloads for development
+## Initial Setup
+
+1. **Install dependencies:**
+```bash
+pip install -r requirements.txt
+```
+
+2. **Configure environment variables:**
+   - Copy `.env.example` to `.env`:
+     ```bash
+     cp .env.example .env
+     ```
+   - Edit `.env` and fill in your configuration:
+     - `SECRET_KEY` - Generate a secure random key for sessions
+     - Email server credentials (`MAIL_SERVER`, `MAIL_USERNAME`, `MAIL_PASSWORD`, etc.)
+     - Frontend URLs for development and production
+
+3. **Initialize the database:**
+   - Start the server once to create the database:
+     ```bash
+     python run.py
+     ```
+   - Run the initialization script to set up authentication:
+     ```bash
+     python init_app.py
+     ```
+
+## Development Server
+
 ```bash
 python run.py
 ```
 
-### Setup with a Web Server Gateway Interface
+## Setup with a Web Server Gateway Interface (Production)
 > - Application startup file: **wsgi.py**
 > - Application Entry point: **application**
 
@@ -17,12 +45,8 @@ from run import app  # Import your Flask application
 application = app
 ```
 
-### Initialization
-
-1. Start the server using either options above.  
-If the database doesn't exist yet, it will be automatically created
-
-1. Run init_app `python init_app.py` to setup the authentication system for the first use.
+#### Production Environment Variables
+Set `FLASK_ENV=production` and ensure all required variables in `.env` are configured.
 
 
 ### Update DB after Model's changes

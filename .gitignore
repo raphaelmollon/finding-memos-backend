@@ -9,6 +9,6 @@ log/
 migrations/
 instance/
 static/
-config_email.py
+.env
 *.zip
 .claude/

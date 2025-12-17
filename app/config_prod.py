@@ -1,27 +1,35 @@
 import os
 import datetime
 
+# Load environment variables from .env file (if present)
+from dotenv import load_dotenv
+load_dotenv()
 
-LIFETIME_DELAY = 15     # in days
-TIMEOUT_DELAY = 24*3600 # 1 day in seconds
+LIFETIME_DELAY = int(os.getenv('LIFETIME_DELAY', 15))  # in days
+TIMEOUT_DELAY = int(os.getenv('TIMEOUT_DELAY', 24*3600))  # 1 day in seconds
 
-SECRET_KEY = os.urandom(24)
+# Use SECRET_KEY from environment - REQUIRED in production
+SECRET_KEY = os.getenv('SECRET_KEY')
+if not SECRET_KEY:
+    raise ValueError("SECRET_KEY environment variable must be set in production")
+
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'None'
-SESSION_COOKIE_SECURE = True  
-PERMANENT_SESSION_LIFETIME = datetime.timedelta(days=LIFETIME_DELAY)  # Adjust as needed
+SESSION_COOKIE_SECURE = True
+PERMANENT_SESSION_LIFETIME = datetime.timedelta(days=LIFETIME_DELAY)
 
-SQLALCHEMY_DATABASE_URI = "sqlite:///memos.db"
+SQLALCHEMY_DATABASE_URI = os.getenv('SQLALCHEMY_DATABASE_URI', "sqlite:///memos.db")
 
-# config_email.py has to be created and populated with the correct info
-# For obvious reasons, it's not available on the repo
-from app import config_email
+# Email configuration from environment variables - REQUIRED in production
+MAIL_SERVER = os.getenv('MAIL_SERVER')
+MAIL_PORT = int(os.getenv('MAIL_PORT', 465))
+MAIL_USE_SSL = os.getenv('MAIL_USE_SSL', 'True').lower() in ('true', '1', 'yes')
+MAIL_USE_TLS = os.getenv('MAIL_USE_TLS', 'False').lower() in ('true', '1', 'yes')
+MAIL_USERNAME = os.getenv('MAIL_USERNAME')
+MAIL_PASSWORD = os.getenv('MAIL_PASSWORD')
+MAIL_DEFAULT_SENDER = os.getenv('MAIL_DEFAULT_SENDER')
+FRONTEND_URL = os.getenv('FRONTEND_URL_PROD')
 
-MAIL_SERVER = config_email.MAIL_SERVER
-MAIL_PORT = config_email.MAIL_PORT
-MAIL_USE_SSL = config_email.MAIL_USE_SSL
-MAIL_USE_TLS = config_email.MAIL_USE_TLS
-MAIL_USERNAME = config_email.MAIL_USERNAME
-MAIL_PASSWORD = config_email.MAIL_PASSWORD
-MAIL_DEFAULT_SENDER = config_email.MAIL_DEFAULT_SENDER
-FRONTEND_URL = config_email.FRONTEND_URL_PROD
+# Validate required production settings
+if not all([MAIL_SERVER, MAIL_USERNAME, MAIL_PASSWORD, MAIL_DEFAULT_SENDER, FRONTEND_URL]):
+    raise ValueError("Email configuration environment variables are required in production")
