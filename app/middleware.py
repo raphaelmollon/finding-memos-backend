@@ -9,6 +9,25 @@ from flask import current_app as app
 
 middleware_bp = Blueprint('auth', __name__)
 
+# Cache for auth configuration
+_auth_config_cache = {'enable_auth': True, 'last_refresh': None}
+
+def get_auth_config():
+    """Get authentication config with caching to avoid DB queries on every request"""
+    global _auth_config_cache
+
+    # Refresh cache every 60 seconds or if never loaded
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if (_auth_config_cache['last_refresh'] is None or
+        (now - _auth_config_cache['last_refresh']).total_seconds() > 60):
+
+        config = Config.query.filter_by(id=1).first()
+        _auth_config_cache['enable_auth'] = config.enable_auth if config else True
+        _auth_config_cache['last_refresh'] = now
+        logging.debug("Refreshed auth config cache")
+
+    return _auth_config_cache['enable_auth']
+
 # Middleware to enforce authentication
 @middleware_bp.before_request
 def refresh_session():
@@ -39,9 +58,8 @@ def auth_required(f):
     logging.debug("Entering auth_required")
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # Check if authentication is enabled
-        config = Config.query.filter_by(id=1).first()
-        if not config or not config.enable_auth:
+        # Check if authentication is enabled (cached to avoid DB query on every request)
+        if not get_auth_config():
             return f(*args, **kwargs)  # Auth not enforced
         
         # Check session for logged-in user

@@ -4,7 +4,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from app.database import db
 from app.models import User, Config
-from app.middleware import auth_required
+from app.middleware import auth_required, get_auth_config
 from app.helpers import validate_password
 from app.services.token_service import token_service
 from app.services.email_service import email_service
@@ -63,10 +63,11 @@ class SignIn(Resource):
 
             if not email or not password:
                 return {"error": "Email and password are required"}, 400
-            logging.debug(f"AFTER credentials check.. email={email} ; pwd={password}")
+            logging.debug(f"Sign-in attempt for email: {email}")
 
             user = User.query.filter_by(email=email).first()
-            logging.debug(f"Found user:{user.email}")
+            if user:
+                logging.debug(f"Found user: {user.email}")
             if not user or not check_password_hash(user.password_hash, password):
                 return {"error": "Invalid credentials"}, 401
             logging.debug("AFTER existing user check")
@@ -316,10 +317,9 @@ class SessionCheck(Resource):
     def get(self):
         """Check current session status"""
         logging.debug("Entering session-check")
-        
-        # Vérifier si l'authentification est activée
-        config = Config.query.filter_by(id=1).first()
-        if not config or not config.enable_auth:
+
+        # Check if authentication is enabled (using cached config)
+        if not get_auth_config():
             return {"user": {"email": "no_auth@required", "is_superuser": True}}, 200
         
         if session.get('session_timeout'):
