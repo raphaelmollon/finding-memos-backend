@@ -16,18 +16,65 @@ pip install -r requirements.txt
      - `SECRET_KEY` - Generate a secure random key for sessions
      - Email server credentials (`MAIL_SERVER`, `MAIL_USERNAME`, `MAIL_PASSWORD`, etc.)
      - Frontend URLs for development and production
+     - Database connection (see step 3)
 
-3. **Initialize the database:**
-   - Start the server once to create the database:
+3. **Set up MariaDB database:**
+   - Create database and user in MariaDB:
      ```bash
-     python run.py
+     mysql -u root -p
      ```
-   - Run the initialization script to set up authentication:
-     ```bash
-     python init_app.py
+     ```sql
+     CREATE DATABASE finding_memo CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+     CREATE USER 'YOUR_USER'@'YOUR_SERVER' IDENTIFIED BY 'YOUR_SECURE_PASSWORD';
+     GRANT ALL PRIVILEGES ON finding_memo.* TO 'YOUR_USER'@'localhost';
+     FLUSH PRIVILEGES;
+     EXIT;
+     ```
+   - Update `.env` with your MariaDB connection string:
+     ```
+     SQLALCHEMY_DATABASE_URI=mysql+pymysql://YOUR_USER:YOUR_PASSWORD@YOUR_SERVER:3306/finding_memo
      ```
 
-## Development Server
+4. **Initialize the database:**
+   - Run migrations to create tables:
+     ```bash
+     flask db upgrade
+     ```
+
+5. **Create first superuser (fresh installation only):**
+   - If migrating from SQLite, skip this step (run `migrate_data.py` instead)
+   - For fresh installations, create superuser via Flask shell:
+     ```bash
+     flask shell
+     ```
+     ```python
+     from app.models import User, Config
+     from app.database import db
+     from werkzeug.security import generate_password_hash
+     import json
+
+     # Create superuser
+     superuser = User(
+         email='admin@example.com',
+         password_hash=generate_password_hash('your_password'),
+         is_superuser=True,
+         status='VALID'
+     )
+     db.session.add(superuser)
+
+     # Create config
+     config = Config(
+         id=1,
+         enable_auth=True,
+         allowed_domains=json.dumps(['example.com'])
+     )
+     db.session.add(config)
+
+     db.session.commit()
+     exit()
+     ```
+
+## Run Development Server
 
 ```bash
 python run.py
@@ -35,23 +82,9 @@ python run.py
 
 ## Testing
 
-### Rate Limiter Test
-To verify rate limiting is working:
+A dedicated README is available in ./tests/ 
 
-```bash
-# With server running
-python tests/test_rate_limit.py
 
-# Or test directly without running server
-python tests/test_rate_limit_direct.py
-```
-
-The rate limiter protects against brute force attacks:
-- `/auth/sign-in`: 5 requests per minute
-- `/auth/sign-up`: 3 requests per hour
-- `/auth/forgot-password`: 3 requests per hour
-- `/auth/reset-password`: 10 requests per hour
-- `/auth/resend-validation`: 3 requests per hour
 
 ## Setup with a Web Server Gateway Interface (Production)
 > - Application startup file: **wsgi.py**

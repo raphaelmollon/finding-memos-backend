@@ -16,7 +16,21 @@ SESSION_COOKIE_SECURE = False  # no HTTPS in dev mode
 SESSION_COOKIE_DOMAIN = None
 PERMANENT_SESSION_LIFETIME = datetime.timedelta(days=LIFETIME_DELAY)
 
-SQLALCHEMY_DATABASE_URI = os.getenv('SQLALCHEMY_DATABASE_URI', "sqlite:///memos.db")
+SQLALCHEMY_DATABASE_URI = os.getenv('SQLALCHEMY_DATABASE_URI')
+
+# Validate database URI is set
+if not SQLALCHEMY_DATABASE_URI:
+    raise ValueError("SQLALCHEMY_DATABASE_URI environment variable must be set in .env file")
+
+# Database connection pool settings
+SQLALCHEMY_POOL_SIZE = int(os.getenv('SQLALCHEMY_POOL_SIZE', 10))
+SQLALCHEMY_POOL_RECYCLE = int(os.getenv('SQLALCHEMY_POOL_RECYCLE', 3600))
+SQLALCHEMY_POOL_PRE_PING = os.getenv('SQLALCHEMY_POOL_PRE_PING', 'True').lower() in ('true', '1', 'yes')
+SQLALCHEMY_ENGINE_OPTIONS = {
+    'pool_size': SQLALCHEMY_POOL_SIZE,
+    'pool_recycle': SQLALCHEMY_POOL_RECYCLE,
+    'pool_pre_ping': SQLALCHEMY_POOL_PRE_PING,
+}
 
 # Email configuration from environment variables
 MAIL_SERVER = os.getenv('MAIL_SERVER')
