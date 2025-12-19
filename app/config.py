@@ -8,8 +8,8 @@ load_dotenv()
 LIFETIME_DELAY = int(os.getenv('LIFETIME_DELAY', 15))  # in days
 TIMEOUT_DELAY = int(os.getenv('TIMEOUT_DELAY', 24*3600))  # 1 day in seconds
 
-# Use SECRET_KEY from environment, fallback to generated key (not recommended for production)
-SECRET_KEY = os.getenv('SECRET_KEY', os.urandom(24))
+# Generate a new key every time the server restarts to force users to log in again
+SECRET_KEY = os.urandom(24)
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'Lax'
 SESSION_COOKIE_SECURE = False  # no HTTPS in dev mode

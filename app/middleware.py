@@ -65,12 +65,12 @@ def auth_required(f):
         # Check session for logged-in user
         user_id = session.get('user_id')
         if not user_id:
-            return jsonify({"error": "Authentication required"}), 401
-        
+            return {"error": "Authentication required"}, 401
+
         # Get user through SQLAlchemy
         user = User.query.filter_by(id=user_id).first()
         if not user:
-            return jsonify({"error": "Invalid session"}), 401
+            return {"error": "Invalid session"}, 401
         # Attach user information to the global `g` object for route use
         g.user = user
 

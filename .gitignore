@@ -12,3 +12,5 @@ static/
 .env
 *.zip
 .claude/
+htmlcov/
+*.coverage*

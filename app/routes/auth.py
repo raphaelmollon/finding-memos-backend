@@ -249,13 +249,13 @@ class ResetPassword(Resource):
         token = data.get('token')
         new_password = data.get('new_password')
 
+        if not token or not new_password:
+            return {"error": "Token and new password are required"}, 400
+
         # Validate new password
         password_error = validate_password(new_password)
         if password_error:
             return {"error": password_error}, 400
-
-        if not token or not new_password:
-            return {"error": "Token and new password are required"}, 400
         
         try:
             # from app.services.token_service import token_service
