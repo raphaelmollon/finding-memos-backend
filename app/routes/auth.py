@@ -208,7 +208,6 @@ class ForgotPassword(Resource):
             user = User.query.filter_by(email=email).first()
             if user:
                 # Generate a new token
-                # from app.services.token_service import token_service
                 reset_token = token_service.generate_reset_token(user.id)
 
                 # Store the hashed token (security: only hash is stored in DB)
@@ -216,7 +215,6 @@ class ForgotPassword(Resource):
                 db.session.commit()
 
                 # send the email
-                # from app.services.email_service import email_service
                 email_sent = email_service.send_password_reset(email, reset_token)
 
                 if email_sent:
