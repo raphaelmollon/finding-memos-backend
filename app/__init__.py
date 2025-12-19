@@ -10,28 +10,26 @@ from .limiter import limiter
 import os
 
 def create_app():
-    
-    app = Flask(__name__)
-    CORS(app, 
-         supports_credentials=True, 
-         origins=[
-             "http://localhost:8080", 
-             "http://localhost:8081", 
-             "http://127.0.0.1:8080", 
-             "https://finding-memos.savoye.support"
-         ],
-         allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
-         expose_headers=["X-Session-Timeout"],
-         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-         max_age=600
-    )
 
+    app = Flask(__name__)
+
+    # Load configuration first (needed for CORS_ORIGINS)
     is_production = os.environ.get('FLASK_ENV') == 'production'
     logging.debug(f"IS_PRODUCTION:{is_production}")
     if is_production:
         app.config.from_pyfile('config_prod.py')
     else:
         app.config.from_pyfile('config.py')
+
+    # Configure CORS with origins from config
+    CORS(app,
+         supports_credentials=True,
+         origins=app.config['CORS_ORIGINS'],
+         allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+         expose_headers=["X-Session-Timeout"],
+         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+         max_age=600
+    )
 
     # Initialize the database
     db.init_app(app)

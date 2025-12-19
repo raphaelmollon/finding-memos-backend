@@ -77,7 +77,7 @@ class SignIn(Resource):
             if user and user.status == 'CLOSED':
                 return {"error": "Your account is closed"}, 403
             if user and user.status != 'VALID':
-                return {"error": "Very bad error..."}, 403
+                return {"error": "Account status is invalid. Please contact support."}, 403
             logging.debug("AFTER status check")
 
             session['user_id'] = user.id

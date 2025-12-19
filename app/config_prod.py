@@ -30,6 +30,12 @@ MAIL_PASSWORD = os.getenv('MAIL_PASSWORD')
 MAIL_DEFAULT_SENDER = os.getenv('MAIL_DEFAULT_SENDER')
 FRONTEND_URL = os.getenv('FRONTEND_URL_PROD')
 
+# CORS origins - comma-separated list in environment variable (REQUIRED in production)
+CORS_ORIGINS = os.getenv('CORS_ORIGINS_PROD')
+if not CORS_ORIGINS:
+    raise ValueError("CORS_ORIGINS_PROD environment variable must be set in production")
+CORS_ORIGINS = CORS_ORIGINS.split(',')
+
 # Validate required production settings
 if not all([MAIL_SERVER, MAIL_USERNAME, MAIL_PASSWORD, MAIL_DEFAULT_SENDER, FRONTEND_URL]):
     raise ValueError("Email configuration environment variables are required in production")

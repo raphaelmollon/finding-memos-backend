@@ -27,3 +27,6 @@ MAIL_USERNAME = os.getenv('MAIL_USERNAME')
 MAIL_PASSWORD = os.getenv('MAIL_PASSWORD')
 MAIL_DEFAULT_SENDER = os.getenv('MAIL_DEFAULT_SENDER')
 FRONTEND_URL = os.getenv('FRONTEND_URL_DEV', 'http://localhost:8080')
+
+# CORS origins - comma-separated list in environment variable
+CORS_ORIGINS = os.getenv('CORS_ORIGINS_DEV', 'http://localhost:8080,http://localhost:8081,http://127.0.0.1:8080').split(',')
