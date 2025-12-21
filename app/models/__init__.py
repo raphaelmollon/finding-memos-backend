@@ -3,3 +3,4 @@ from .config import Config
 from .memo import Memo
 from .category import Category
 from .type import Type
+from .connection import Connection

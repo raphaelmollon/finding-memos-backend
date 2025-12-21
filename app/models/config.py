@@ -7,3 +7,4 @@ class Config(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     enable_auth = db.Column(db.Boolean, default=True)
     allowed_domains = db.Column(db.Text, default='["example.com"]')
+    encryption_key = db.Column(db.String(64), nullable=True)

@@ -19,3 +19,4 @@ htmlcov/
 *.coverage*
 .pytest_cache/
 */__pycache__/
+external_resources/
