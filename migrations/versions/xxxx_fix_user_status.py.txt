@@ -1,0 +1,18 @@
+# migrations/versions/xxx_fix_user_status.py
+def upgrade():
+    # Mettre à jour les valeurs NULL
+    op.execute("UPDATE users SET status = 'NEW' WHERE status IS NULL")
+    
+    # Corriger la colonne
+    with op.batch_alter_table('users') as batch_op:
+        batch_op.alter_column('status',
+                   existing_type=sa.String(length=20),
+                   nullable=False,
+                   server_default='NEW')
+
+def downgrade():
+    with op.batch_alter_table('users') as batch_op:
+        batch_op.alter_column('status',
+                   existing_type=sa.String(length=20),
+                   nullable=True,
+                   server_default=None)

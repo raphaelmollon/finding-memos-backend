@@ -1,0 +1,221 @@
+================================================================================
+                        DEPLOYMENT WORKFLOW DIAGRAM
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          LOCAL DEVELOPMENT                                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+    Your Computer
+    ─────────────
+    │
+    ├─ app/              (your code)
+    ├─ migrations/       (database migrations)
+    ├─ .env              (local config)
+    └─ MariaDB Database  (local data)
+
+
+    ┌──────────────────────────────────────────────────────────────┐
+    │                    OPTION 1: WITH DATA                       │
+    │                  (First deploy / Copy data)                  │
+    └──────────────────────────────────────────────────────────────┘
+
+         1. Run: python deploy/deploy.py --with-data
+                │
+                ├─> Exports database to SQL file
+                ├─> Packages code + migrations
+                └─> Creates: deploy_YYYYMMDD_HHMMSS.zip
+                     │
+                     │   Contains:
+                     ├── app/
+                     ├── migrations/
+                     ├── deploy_db_*.sql  ← Database export!
+                     └── requirements.txt
+
+         2. Upload ZIP to server
+                │
+                ▼
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         PRODUCTION SERVER                                   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+         3. Extract: unzip deploy_YYYYMMDD_HHMMSS.zip
+
+         4. Configure:
+                cp .env.example .env
+                (edit .env with production values)
+
+         5. Import database:
+                python deploy/import_db_from_sql.py deploy_db_*.sql
+                │
+                └─> Restores all data to MariaDB
+
+         6. Install & Start:
+                pip install -r requirements.txt
+                # Configure WSGI
+                # Start application
+
+         ✓ DEPLOYED! App running with your data
+
+
+    ┌──────────────────────────────────────────────────────────────┐
+    │                   OPTION 2: MIGRATIONS                       │
+    │              (Schema updates / Code changes)                 │
+    └──────────────────────────────────────────────────────────────┘
+
+         1. Make code changes & migrations:
+                flask db migrate -m "add new column"
+
+         2. Run: python deploy/deploy.py
+                │
+                ├─> Packages code + migrations (no data export)
+                └─> Creates: deploy_YYYYMMDD_HHMMSS.zip
+                     │
+                     │   Contains:
+                     ├── app/
+                     ├── migrations/  ← New migration files!
+                     └── requirements.txt
+
+         3. Upload ZIP to server
+                │
+                ▼
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         PRODUCTION SERVER                                   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+         4. Extract: unzip deploy_YYYYMMDD_HHMMSS.zip
+
+         5. Run migrations:
+                flask db upgrade
+                │
+                └─> Updates database schema
+                    (keeps existing data!)
+
+         6. Restart application
+
+         ✓ DEPLOYED! App updated with new schema
+
+
+================================================================================
+                          BACKUP & RESTORE FLOW
+================================================================================
+
+    BACKUP (Anytime)
+    ────────────────
+         python deploy/export_db.py
+              │
+              └─> Creates: db_backup_YYYYMMDD_HHMMSS.sql
+
+
+    RESTORE (When needed)
+    ─────────────────────
+         python deploy/import_db_from_sql.py db_backup_YYYYMMDD_HHMMSS.sql
+              │
+              └─> Restores database from backup
+
+
+================================================================================
+                       TYPICAL DEPLOYMENT SCENARIOS
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Scenario                    │ Command                  │ On Server          │
+├─────────────────────────────┼──────────────────────────┼────────────────────┤
+│ First deployment            │ deploy.py --with-data    │ Import database    │
+│ Fixed a bug                 │ deploy.py                │ Just extract       │
+│ Added new feature           │ deploy.py                │ Just extract       │
+│ Added database column       │ deploy.py                │ flask db upgrade   │
+│ Changed table structure     │ deploy.py                │ flask db upgrade   │
+│ Want to backup              │ export_db.py             │ N/A                │
+│ Need to restore             │ N/A                      │ import_db*.sql     │
+└─────────────────────────────┴──────────────────────────┴────────────────────┘
+
+
+================================================================================
+                            FILE EXCLUSIONS
+================================================================================
+
+    When you run deploy.py, it AUTOMATICALLY excludes:
+
+    ❌ tests/              → Not needed in production
+    ❌ __pycache__/        → Regenerated automatically
+    ❌ .pytest_cache/      → Testing artifacts
+    ❌ htmlcov/            → Coverage reports
+    ❌ log/                → Old log files
+    ❌ .env                → YOUR SECRETS! (configure on server)
+    ❌ *.db                → Old SQLite databases
+    ❌ old/                → Backup folder
+    ❌ .git/               → Git repository
+
+    ✅ Only clean, production-ready files are included!
+
+
+================================================================================
+                          MIGRATION WORKFLOW
+================================================================================
+
+    LOCAL                           PRODUCTION
+    ═════                           ══════════
+
+    1. Change model
+       (add column, etc.)
+
+    2. flask db migrate
+       └─> Creates migration file
+
+    3. flask db upgrade
+       └─> Test locally
+
+    4. git commit
+       └─> Commit migration
+
+    5. python deploy/deploy.py
+       └─> Package
+
+    6. Upload ZIP ─────────────────► 7. Extract ZIP
+
+                                     8. flask db upgrade
+                                        └─> Apply migration
+
+                                     9. Restart app
+
+                                     ✓ Schema updated!
+
+
+================================================================================
+                         ROLLBACK PROCEDURE
+================================================================================
+
+    If deployment fails:
+
+    1. STOP application
+
+    2. RESTORE database:
+       python deploy/import_db_from_sql.py pre_deploy_backup.sql
+
+    3. RESTORE code:
+       Extract previous deployment ZIP
+
+    4. RESTART application
+
+    5. ✓ Back to working state
+
+
+    ⚠️  IMPORTANT: Always backup before deploying!
+        python deploy/export_db.py pre_deploy_backup.sql
+
+
+================================================================================
+                            QUICK REFERENCE
+================================================================================
+
+    Deploy with data:      python deploy/deploy.py --with-data
+    Deploy code only:      python deploy/deploy.py
+    Export database:       python deploy/export_db.py
+    Import database:       python deploy/import_db_from_sql.py backup.sql
+    Run migrations:        flask db upgrade
+    Create migration:      flask db migrate -m "description"
+
+================================================================================

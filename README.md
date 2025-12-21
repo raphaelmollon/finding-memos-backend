@@ -112,5 +112,93 @@ flask db upgrade
 ```bash
 pipreqs
 ```
-Then in the python app setup on the hosting server: 
+Then in the python app setup on the hosting server:
 Run PIP install requirements.txt (after deploying the package including this file)
+
+
+## Deployment
+
+All deployment tools are in the `deploy/` folder. See [deploy/README_DEPLOYMENT.md](deploy/README_DEPLOYMENT.md) for complete documentation.
+
+### Quick Deploy (Automated Package)
+
+Create a clean deployment package with one command:
+
+```bash
+# Code only (use migrations on server)
+python deploy/deploy.py
+
+# Include database export
+python deploy/deploy.py --with-data
+
+# Custom filename
+python deploy/deploy.py --output production_v2.zip --with-data
+```
+
+This creates a ZIP file containing only production-ready files (excludes tests, cache, logs, etc.).
+
+**What gets included:**
+- All Python code (`app/`, `migrations/`)
+- Configuration files (`requirements.txt`, `.env.example`)
+- Deployment scripts (`deploy/` folder)
+- Documentation
+- Database export (if `--with-data` flag used)
+
+**What gets excluded:**
+- Tests, cache files, logs
+- `.env` file (configure separately on server)
+- Development files (`.git`, `.pytest_cache`, etc.)
+- Old SQLite databases and backups
+
+The script shows deployment instructions after creating the package.
+
+---
+
+## Database Backup & Deployment
+
+### Exporting Database
+Export your database to SQL file for backup or deployment:
+```bash
+# Export with auto-generated filename (db_backup_YYYYMMDD_HHMMSS.sql)
+python deploy/export_db.py
+
+# Export to specific file
+python deploy/export_db.py production_backup.sql
+```
+
+### Importing Database
+Import SQL file into database:
+```bash
+# With confirmation prompt
+python deploy/import_db_from_sql.py db_backup_20231215_120000.sql
+
+# Skip confirmation (useful for automated tools/scripts)
+python deploy/import_db_from_sql.py db_backup_20231215_120000.sql --yes
+```
+
+### Deployment Workflows
+
+#### Option 1: Deploy with Data (Full Backup)
+When you want to copy everything including data:
+1. Export database locally: `python deploy/export_db.py production_deploy.sql`
+2. Deploy code + SQL file to server
+3. On server: `python deploy/import_db_from_sql.py production_deploy.sql --yes`
+
+#### Option 2: Deploy Schema Only (Migrations)
+When you only need table structures without data:
+1. Ensure migrations are created: `flask db migrate -m "description"`
+2. Deploy code (including migrations folder) to server
+3. On server: `flask db upgrade`
+4. Manually create superuser if needed (see step 5 in Initial Setup)
+
+#### Option 3: Update Schema on Existing Database
+When you need to update table structures on deployed database:
+1. Locally: `flask db migrate -m "add new column"`
+2. Deploy code (including new migration files)
+3. On server: `flask db upgrade`
+
+### Notes
+- Export/import scripts require `mysql` or `mysqldump` client installed
+- Always backup before importing or running migrations in production
+- Exports include data, schema, triggers, and stored procedures
+- See `deploy/` folder for complete deployment documentation
