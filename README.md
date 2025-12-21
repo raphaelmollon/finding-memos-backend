@@ -157,13 +157,19 @@ The script shows deployment instructions after creating the package.
 ## Database Backup & Deployment
 
 ### Exporting Database
-Export your database to SQL file for backup or deployment:
+Export your database to SQL or JSON file for backup or deployment:
 ```bash
-# Export with auto-generated filename (db_backup_YYYYMMDD_HHMMSS.sql)
+# Export to SQL with auto-generated filename (db_backup_YYYYMMDD_HHMMSS.sql)
 python deploy/export_db.py
 
-# Export to specific file
+# Export to specific SQL file
 python deploy/export_db.py production_backup.sql
+
+# Export to JSON format (useful for data inspection/migration)
+python deploy/export_db.py backup.json --to-json
+
+# Export to JSON with auto-generated filename
+python deploy/export_db.py --to-json
 ```
 
 ### Importing Database

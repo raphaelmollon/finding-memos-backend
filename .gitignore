@@ -1,4 +1,5 @@
 db_save.json
+db_backup_*.json
 *.db
 *.sql
 db_backup_*.sql
