@@ -7,6 +7,7 @@ from app.middleware import auth_required
 from app.helpers import get_or_create_category, get_or_create_type, clean_unused_category, clean_unused_type
 
 import logging
+from datetime import datetime
 
 memos_ns = Namespace('memos', description='Memos operations')
 
@@ -214,38 +215,130 @@ class MemoResource(Resource):
             logging.error(f"Error updating memo: {str(e)}")
             return {"error": str(e)}, 500
 
-# Route to add multiple memos at once
-@memos_ns.route('/bulk')
-class MemosBulk(Resource):
+# Route to export current user's memos
+@memos_ns.route('/export')
+class MemosExport(Resource):
     @auth_required
-    @memos_ns.expect([memo_input_model])
-    @memos_ns.response(201, "Memos imported")
-    @memos_ns.response(400, "Bad request")
+    @memos_ns.response(200, 'Export successful')
+    @memos_ns.response(500, 'Internal server error')
+    def get(self):
+        """Export all memos for the current user"""
+        try:
+            memos = Memo.query.filter_by(author_id=g.user.id).all()
+
+            memos_list = []
+            for memo in memos:
+                memo_dict = {
+                    "name": memo.name,
+                    "description": memo.description,
+                    "content": memo.content,
+                    "category_name": memo.category.name if memo.category else None,
+                    "type_name": memo.type.name if memo.type else None,
+                    "created_at": memo.created_at.isoformat() if memo.created_at else None,
+                    "updated_at": memo.updated_at.isoformat() if memo.updated_at else None
+                }
+                memos_list.append(memo_dict)
+
+            return {
+                "memos": memos_list,
+                "count": len(memos_list),
+                "exported_at": datetime.now().isoformat()
+            }, 200
+
+        except Exception as e:
+            logging.error(f"Error exporting memos: {str(e)}")
+            return {"error": "Failed to export memos. Please try again later."}, 500
+
+# Route to import memos for current user
+@memos_ns.route('/import')
+class MemosImport(Resource):
+    @auth_required
+    @memos_ns.response(200, 'Success')
+    def get(self):
+        """Get help on the memo import format"""
+        help_info = {
+            "description": "Import multiple memos at once using JSON format",
+            "format": {
+                "memos": [
+                    {
+                        "name": "string (required) - The memo title",
+                        "content": "string (required) - The memo content",
+                        "description": "string (optional) - A description of the memo",
+                        "category_name": "string (optional) - Category name (will be created if it doesn't exist)",
+                        "type_name": "string (optional) - Type name (will be created if it doesn't exist)"
+                    }
+                ]
+            },
+            "example": {
+                "memos": [
+                    {
+                        "name": "My First Memo",
+                        "content": "This is the content of my memo",
+                        "description": "A simple memo example",
+                        "category_name": "Work",
+                        "type_name": "Note"
+                    },
+                    {
+                        "name": "Another Memo",
+                        "content": "Another memo content",
+                        "category_name": "Personal"
+                    }
+                ]
+            },
+            "notes": [
+                "All memos will be associated with your user account",
+                "Categories and types will be created automatically if they don't exist",
+                "Invalid memos (missing name or content) will be skipped",
+                "You can export your current memos using GET /memos/export"
+            ]
+        }
+        return help_info, 200
+
+    @auth_required
+    @memos_ns.response(201, 'Import successful')
+    @memos_ns.response(400, 'Bad request')
     @memos_ns.response(500, 'Internal server error')
     def post(self):
-        """Import memos"""
-        memos_data = request.get_json()
+        """Import memos for the current user"""
+        import_data = request.get_json()
 
-        # Check if the data is valid
+        if not import_data:
+            return {"error": "No data provided for import"}, 400
+
+        if not isinstance(import_data, dict):
+            return {"error": "Data must be a JSON object with a 'memos' array"}, 400
+
+        memos_data = import_data.get('memos', [])
+
         if not isinstance(memos_data, list):
-            return {"error": "Data must be a list of memos."}, 400
+            return {"error": "'memos' must be an array of memo objects"}, 400
+
+        if len(memos_data) == 0:
+            return {"error": "No memos provided in the 'memos' array"}, 400
 
         try:
-            for memo_data in memos_data:
-                name = memo_data.get('name')
-                description = memo_data.get('description', '')
-                content = memo_data.get('content')
-                category_name = memo_data.get('category')
-                type_name = memo_data.get('type')
+            imported_count = 0
+            skipped_count = 0
+            errors = []
 
+            for index, memo_data in enumerate(memos_data):
+                name = memo_data.get('name')
+                content = memo_data.get('content')
+                description = memo_data.get('description', '')
+                category_name = memo_data.get('category_name')
+                type_name = memo_data.get('type_name')
+
+                # Validate required fields
                 if not name or not content:
-                    continue  # Ignore invalid entries
+                    skipped_count += 1
+                    errors.append(f"Memo at index {index}: Missing required field (name or content)")
+                    continue
 
                 # Get or create category and type
-                category = get_or_create_category(category_name)
-                type_obj = get_or_create_type(type_name)
+                category = get_or_create_category(category_name) if category_name else None
+                type_obj = get_or_create_type(type_name) if type_name else None
 
-                # Insert the memo into the memos table
+                # Create memo
                 memo = Memo(
                     name=name,
                     description=description,
@@ -255,14 +348,25 @@ class MemosBulk(Resource):
                     author_id=g.user.id
                 )
                 db.session.add(memo)
-            
+                imported_count += 1
+
             db.session.commit()
-            return {"message": "Memos imported successfully."}, 201
+
+            response = {
+                "message": f"Import completed. {imported_count} memos imported successfully.",
+                "imported": imported_count,
+                "skipped": skipped_count
+            }
+
+            if errors:
+                response["errors"] = errors
+
+            return response, 201
 
         except Exception as e:
             db.session.rollback()
-            logging.error(f"Error adding bulk memos: {str(e)}")
-            return {"error": str(e)}, 500
+            logging.error(f"Error importing memos: {str(e)}")
+            return {"error": f"Failed to import memos: {str(e)}"}, 500
 
 # Route to get the number of registered memos
 @memos_ns.route('/stats')

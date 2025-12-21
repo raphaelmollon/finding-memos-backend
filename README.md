@@ -1,5 +1,24 @@
 # Finding-Memo - Backend
 
+## Table of Contents
+- [Initial Setup](#initial-setup)
+- [Run Development Server](#run-development-server)
+- [Testing](#testing)
+- [Setup with a Web Server Gateway Interface (Production)](#setup-with-a-web-server-gateway-interface-production)
+  - [Content of wsgi.py](#content-of-wsgipy)
+  - [Production Environment Variables](#production-environment-variables)
+- [Update DB after Model's changes](#update-db-after-models-changes)
+- [Update requirements after new deploy](#update-requirements-after-new-deploy)
+- [Deployment](#deployment)
+  - [Quick Deploy (Automated Package)](#quick-deploy-automated-package)
+- [Database Backup & Deployment](#database-backup--deployment)
+  - [Exporting Database](#exporting-database)
+  - [Importing Database](#importing-database)
+  - [Deployment Workflows](#deployment-workflows)
+  - [Notes](#notes)
+
+---
+
 ## Initial Setup
 
 1. **Install dependencies:**
