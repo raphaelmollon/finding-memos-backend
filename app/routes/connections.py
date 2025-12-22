@@ -3,7 +3,7 @@ import json
 import logging
 import zipfile
 import shutil
-from datetime import datetime
+from datetime import datetime, timezone
 from flask import request, g
 from flask_restx import Namespace, Resource, fields
 from sqlalchemy import or_, and_
@@ -218,7 +218,7 @@ class ConnectionsImport(Resource):
                                         existing.url = url_data.get('url')
                                         existing.user = url_data.get('user')
                                         existing.pwd = url_data.get('pwd')
-                                        existing.updated_at = datetime.utcnow()
+                                        existing.updated_at = datetime.now(timezone.utc)
                                         updated_count += 1
                                     else:
                                         # Create new connection

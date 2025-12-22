@@ -1,5 +1,5 @@
 from ..database import db
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class Connection(db.Model):
@@ -48,8 +48,8 @@ class Connection(db.Model):
     pwd = db.Column(db.Text, nullable=True)  # Encrypted, nullable
 
     # Timestamps
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
 
     def __repr__(self):
         return f'<Connection {self.company_name}/{self.site_name}/{self.application_name} - {self.url_id}>'
