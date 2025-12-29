@@ -37,6 +37,7 @@ connection_model = connections_ns.model('Connection', {
     'url_mode': fields.String(description='URL mode (classic/extrapolated)'),
     'url_service': fields.String(description='Service type'),
     'url_server_type': fields.String(description='Server type'),
+    'url_server_comment': fields.String(description='Server comment'),
     'url_type': fields.String(description='URL type'),
     'has_credentials': fields.Boolean(description='Whether this connection has credentials'),
     'has_url': fields.Boolean(description='Whether this connection has a URL'),
@@ -269,6 +270,7 @@ class ConnectionsImport(Resource):
                                         url_mode=url_data.get('mode'),
                                         url_service=url_data.get('service'),
                                         url_server_type=url_data.get('server_type'),
+                                        url_server_comment=url_data.get('server_comment'),
                                         url_type=url_data.get('url_type'),
                                         url=url_data.get('url'),
                                         user=url_data.get('user'),
@@ -295,6 +297,7 @@ class ConnectionsImport(Resource):
                                         existing.url_mode = url_data.get('mode')
                                         existing.url_service = url_data.get('service')
                                         existing.url_server_type = url_data.get('server_type')
+                                        existing.url_server_comment = url_data.get('server_comment')
                                         existing.url_type = url_data.get('url_type')
                                         existing.url = url_data.get('url')
                                         existing.user = url_data.get('user')
@@ -318,6 +321,7 @@ class ConnectionsImport(Resource):
                                             url_mode=url_data.get('mode'),
                                             url_service=url_data.get('service'),
                                             url_server_type=url_data.get('server_type'),
+                                            url_server_comment=url_data.get('server_comment'),
                                             url_type=url_data.get('url_type'),
                                             url=url_data.get('url'),
                                             user=url_data.get('user'),

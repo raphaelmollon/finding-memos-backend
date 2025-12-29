@@ -40,6 +40,7 @@ class Connection(db.Model):
     url_mode = db.Column(db.String(50), nullable=True)  # 'classic' or 'extrapolated'
     url_service = db.Column(db.String(50), nullable=True, index=True)  # SCS, SCL, DIP_ST, etc.
     url_server_type = db.Column(db.String(100), nullable=True, index=True)  # Production, Test, etc.
+    url_server_comment = db.Column(db.Text, nullable=True)  # Server comment (not encrypted)
 
     # URL data (some encrypted, some not)
     url_type = db.Column(db.Text, nullable=True)  # Not encrypted, nullable
@@ -85,6 +86,7 @@ class Connection(db.Model):
             'url_mode': self.url_mode,
             'url_service': self.url_service,
             'url_server_type': self.url_server_type,
+            'url_server_comment': self.url_server_comment,
             'url_type': self.url_type,
             'has_credentials': bool(self.user and self.pwd),
             'has_url': bool(self.url),
