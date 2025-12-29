@@ -9,8 +9,8 @@ class Memo(db.Model):
     name = db.Column(db.String(120), nullable=False)
     description = db.Column(db.Text)
     content = db.Column(db.Text, nullable=False)
-    category_id = db.Column(db.Integer, db.ForeignKey('categories.id'))
-    type_id = db.Column(db.Integer, db.ForeignKey('types.id'))
+    category_id = db.Column(db.Integer, db.ForeignKey('categories.id', name='fk_memos_category_id'))
+    type_id = db.Column(db.Integer, db.ForeignKey('types.id', name='fk_memos_type_id'))
 
     author_id = db.Column(db.Integer, db.ForeignKey('users.id', name='fk_memos_author_id'), nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))

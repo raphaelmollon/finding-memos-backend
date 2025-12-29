@@ -28,8 +28,8 @@ def upgrade():
     sa.Column('last_used_at', sa.DateTime(), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
-    sa.ForeignKeyConstraint(['connection_id'], ['connections.id'], ondelete='CASCADE'),
-    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['connection_id'], ['connections.id'], name='fk_cue_connection_id', ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], name='fk_cue_user_id', ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('user_id', 'connection_id', name='unique_user_connection')
     )

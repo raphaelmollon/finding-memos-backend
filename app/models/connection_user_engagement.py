@@ -16,8 +16,8 @@ class ConnectionUserEngagement(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
 
     # Foreign keys
-    connection_id = db.Column(db.Integer, db.ForeignKey('connections.id', ondelete='CASCADE'), nullable=False, index=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    connection_id = db.Column(db.Integer, db.ForeignKey('connections.id', name='fk_cue_connection_id', ondelete='CASCADE'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', name='fk_cue_user_id', ondelete='CASCADE'), nullable=False, index=True)
 
     # Rating: 'up', 'down', or None (no rating)
     rating = db.Column(db.Enum('up', 'down', name='rating_enum'), nullable=True)
