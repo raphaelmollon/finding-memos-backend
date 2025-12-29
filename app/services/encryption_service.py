@@ -161,7 +161,6 @@ class EncryptionService:
         encrypted_fields = {
             'comments': 'comments',
             'server_ip': 'ip',
-            'url_type': 'url_type',
             'url': 'url',
             'user': 'user',
             'pwd': 'pwd'

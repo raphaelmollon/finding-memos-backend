@@ -41,11 +41,16 @@ class Connection(db.Model):
     url_service = db.Column(db.String(50), nullable=True, index=True)  # SCS, SCL, DIP_ST, etc.
     url_server_type = db.Column(db.String(100), nullable=True, index=True)  # Production, Test, etc.
 
-    # Encrypted URL data
-    url_type = db.Column(db.Text, nullable=True)  # Encrypted, nullable
+    # URL data (some encrypted, some not)
+    url_type = db.Column(db.Text, nullable=True)  # Not encrypted, nullable
     url = db.Column(db.Text, nullable=True)  # Encrypted, nullable
     user = db.Column(db.Text, nullable=True)  # Encrypted, nullable
     pwd = db.Column(db.Text, nullable=True)  # Encrypted, nullable
+
+    # User engagement metrics
+    rating_up = db.Column(db.Integer, default=0, nullable=False)  # Thumbs up count
+    rating_down = db.Column(db.Integer, default=0, nullable=False)  # Thumbs down count
+    usage_count = db.Column(db.Integer, default=0, nullable=False)  # Click/copy count
 
     # Timestamps
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
@@ -54,13 +59,15 @@ class Connection(db.Model):
     def __repr__(self):
         return f'<Connection {self.company_name}/{self.site_name}/{self.application_name} - {self.url_id}>'
 
-    def to_dict(self, include_encrypted=False):
+    def to_dict(self, include_encrypted=False, user_engagement=None):
         """
         Convert to dictionary for API responses
 
         Args:
             include_encrypted (bool): Whether to include encrypted fields (default: False)
                                      Set to False to save bandwidth and resources
+            user_engagement (dict): Optional user engagement data to include
+                                   e.g., {'rating': 'up', 'usage_count': 5, ...}
 
         Returns:
             dict: Connection data
@@ -70,26 +77,38 @@ class Connection(db.Model):
             'company_name': self.company_name,
             'site_name': self.site_name,
             'application_name': self.application_name,
-            'application_last_update': self.application_last_update.isoformat() if self.application_last_update else None,
-            'connection_last_update': self.connection_last_update.isoformat() if self.connection_last_update else None,
-            'server_last_update': self.server_last_update.isoformat() if self.server_last_update else None,
+            'application_last_update': self.application_last_update.replace(tzinfo=timezone.utc).isoformat() if self.application_last_update else None,
+            'connection_last_update': self.connection_last_update.replace(tzinfo=timezone.utc).isoformat() if self.connection_last_update else None,
+            'server_last_update': self.server_last_update.replace(tzinfo=timezone.utc).isoformat() if self.server_last_update else None,
             'url_id': self.url_id,
-            'url_last_update': self.url_last_update.isoformat() if self.url_last_update else None,
+            'url_last_update': self.url_last_update.replace(tzinfo=timezone.utc).isoformat() if self.url_last_update else None,
             'url_mode': self.url_mode,
             'url_service': self.url_service,
             'url_server_type': self.url_server_type,
+            'url_type': self.url_type,
             'has_credentials': bool(self.user and self.pwd),
             'has_url': bool(self.url),
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'rating_up': self.rating_up,
+            'rating_down': self.rating_down,
+            'usage_count': self.usage_count,
+            'created_at': self.created_at.replace(tzinfo=timezone.utc).isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.replace(tzinfo=timezone.utc).isoformat() if self.updated_at else None,
         }
+
+        # Add user engagement data if provided
+        if user_engagement:
+            data.update({
+                'user_rating': user_engagement.get('rating'),
+                'user_usage_count': user_engagement.get('usage_count', 0),
+                'user_first_used_at': user_engagement.get('first_used_at'),
+                'user_last_used_at': user_engagement.get('last_used_at'),
+            })
 
         if include_encrypted:
             data.update({
                 'comments': self.comments,
                 'comment_urls': self.comment_urls,
                 'server_ip': self.server_ip,
-                'url_type': self.url_type,
                 'url': self.url,
                 'user': self.user,
                 'pwd': self.pwd,

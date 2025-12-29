@@ -7,7 +7,7 @@ from app.middleware import auth_required
 from app.helpers import get_or_create_category, get_or_create_type, clean_unused_category, clean_unused_type
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 memos_ns = Namespace('memos', description='Memos operations')
 
@@ -234,15 +234,15 @@ class MemosExport(Resource):
                     "content": memo.content,
                     "category_name": memo.category.name if memo.category else None,
                     "type_name": memo.type.name if memo.type else None,
-                    "created_at": memo.created_at.isoformat() if memo.created_at else None,
-                    "updated_at": memo.updated_at.isoformat() if memo.updated_at else None
+                    "created_at": memo.created_at.replace(tzinfo=timezone.utc).isoformat() if memo.created_at else None,
+                    "updated_at": memo.updated_at.replace(tzinfo=timezone.utc).isoformat() if memo.updated_at else None
                 }
                 memos_list.append(memo_dict)
 
             return {
                 "memos": memos_list,
                 "count": len(memos_list),
-                "exported_at": datetime.now().isoformat()
+                "exported_at": datetime.now(timezone.utc).isoformat()
             }, 200
 
         except Exception as e:
