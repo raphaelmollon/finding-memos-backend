@@ -227,7 +227,87 @@ class CurrentUserPreferenceSection(Resource):
             db.session.rollback()
             logging.error(f"Error updating {section} preferences: {e}")
             return {"error": f"Failed to update {section} preferences"}, 500
-        
+
+
+@users_ns.route('/me/settings')
+class CurrentUserSettings(Resource):
+    @auth_required
+    @users_ns.response(200, "Settings retrieved")
+    @users_ns.response(500, "Internal server error")
+    def get(self):
+        """Get current user settings"""
+        try:
+            user = g.user
+            return {
+                "settings": user.get_settings()
+            }, 200
+        except Exception as e:
+            logging.error(f"Error fetching current user settings: {e}")
+            return {"error": "Failed to fetch user settings"}, 500
+
+    @auth_required
+    @users_ns.expect(users_ns.model('SettingsUpdate', {
+        'settings': fields.Raw(description='Updated settings')
+    }))
+    def put(self):
+        """Update all user settings (replace entire settings object)"""
+        try:
+            data = request.get_json()
+            user = g.user
+            user.settings = json.dumps(data.get('settings', {}))
+            db.session.commit()
+            return {"message": "Settings updated successfully"}, 200
+        except Exception as e:
+            db.session.rollback()
+            logging.error(f"Error updating settings: {e}")
+            return {"error": "Failed to update settings"}, 500
+
+
+@users_ns.route('/me/settings/<string:section>')
+class CurrentUserSettingSection(Resource):
+    @auth_required
+    def get(self, section):
+        """Get settings for a specific section"""
+        try:
+            user = g.user
+            section_settings = user.get_settings(section)
+            return {
+                "section": section,
+                "settings": section_settings
+            }, 200
+        except Exception as e:
+            logging.error(f"Error fetching {section} settings: {e}")
+            return {"error": f"Failed to fetch {section} settings"}, 500
+
+    @auth_required
+    @users_ns.expect(users_ns.model('SectionSettingsUpdate', {
+        'settings': fields.Raw(description='Updated section settings')
+    }))
+    def put(self, section):
+        """Update settings for a specific section"""
+        try:
+            data = request.get_json()
+            user = g.user
+
+            logging.debug(f"section:{section} ; data:{str(data)}")
+
+            # Get current settings
+            all_settings = user.get_settings()
+            logging.debug(f"all_settings_BEFORE:{str(all_settings)}")
+            # Update only the specified section
+            all_settings[section] = data.get('settings', {})
+            logging.debug(f"all_settings_AFTER:{str(all_settings)}")
+
+            user.settings = json.dumps(all_settings)
+            logging.debug(f"user.settings:{str(user.settings)}")
+            db.session.commit()
+
+            return {"message": f"{section} settings updated successfully"}, 200
+        except Exception as e:
+            db.session.rollback()
+            logging.error(f"Error updating {section} settings: {e}")
+            return {"error": f"Failed to update {section} settings"}, 500
+
 
 # Route to list all users
 @users_ns.route('')

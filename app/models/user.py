@@ -54,3 +54,20 @@ class User(db.Model):
             return prefs.get(section, default)
         else:
             return prefs
+
+    def get_setting(self, section, key, default=None):
+        """Helper method to get a setting"""
+        settings = json.loads(self.settings or '{}')
+        return settings.get(section, {}).get(key, default)
+
+    def get_settings(self, section=None, default=None):
+        """Helper method to get all settings for one section or all of them"""
+        try:
+            settings = json.loads(self.settings) if self.settings else {}
+        except json.JSONDecodeError:
+            settings = {}
+
+        if section:
+            return settings.get(section, default)
+        else:
+            return settings
