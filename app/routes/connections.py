@@ -161,6 +161,41 @@ def parse_datetime(date_string):
 class ConnectionsImport(Resource):
     @auth_required
     @superuser_required
+    @connections_ns.response(200, 'File status retrieved')
+    @connections_ns.response(403, 'Forbidden')
+    def get(self):
+        """Check if connections.zip file is available (superuser only)"""
+        zip_path = 'connections.zip'
+
+        if os.path.exists(zip_path):
+            try:
+                # Get file size
+                file_size = os.path.getsize(zip_path)
+                # Get last modified time
+                modified_time = datetime.fromtimestamp(os.path.getmtime(zip_path), tz=timezone.utc)
+
+                return {
+                    "available": True,
+                    "file_path": zip_path,
+                    "file_size": file_size,
+                    "modified_at": modified_time.isoformat()
+                }, 200
+            except Exception as e:
+                logging.error(f"Error reading file info: {e}")
+                return {
+                    "available": True,
+                    "file_path": zip_path,
+                    "error": "File exists but cannot read details"
+                }, 200
+        else:
+            return {
+                "available": False,
+                "file_path": zip_path,
+                "message": "connections.zip file not found in root directory"
+            }, 200
+
+    @auth_required
+    @superuser_required
     @connections_ns.response(200, 'Import successful')
     @connections_ns.response(400, 'Bad request')
     @connections_ns.response(403, 'Forbidden')
